@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babylon.js Parallax - Fixed Scroll</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            /* WICHTIG: Keine Browser-Scrollbar mehr! */
+            background-color: #1a1a1a;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            /* Verhindert Standard-Touch-Gesten */
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+            opacity: 0.7;
+            font-size: 14px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.4;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.4;
+            }
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>PARALLAX</h1>
+        <p>Immersive multi-layered depth for cinematic web navigation.</p>
+    </div>
+
+    <canvas id="renderCanvas"></canvas>
+    <div id="instructions">Benutze das Mausrad zum Scrollen</div>
+
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+
+            // Nebel und Farbe
+            scene.clearColor = new BABYLON.Color3(0.1, 0.1, 0.15);
+            scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+            scene.fogDensity = 0.02;
+            scene.fogColor = scene.clearColor;
+
+            // --- 1. DEINE KAMERA EINSTELLUNG ---
+            // Wir nutzen deine Position (-25), damit wir von vorne auf die Objekte schauen.
+            const camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 0, -10), scene);
+            camera.setTarget(new BABYLON.Vector3(0, 0, 0));
+
+            // Licht
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.5;
+
+            // SpotLight (Scheinwerfer)
+            const spotLight = new BABYLON.SpotLight("spotLight",
+                new BABYLON.Vector3(0, 10, -20), // Lichtquelle auch auf deine Seite geholt
+                new BABYLON.Vector3(0, -0.5, 1),
+                Math.PI / 3, 2, scene);
+            spotLight.intensity = 50; // 5000;
+
+
+            // --- Hilfsfunktionen ---
+            const createMat = (url) => {
+                const mat = new BABYLON.StandardMaterial("mat", scene);
+                mat.diffuseTexture = new BABYLON.Texture(url, scene);
+
+                // WICHTIG: Damit man Bilder auch von hinten sehen würde (optional)
+                mat.backFaceCulling = false;
+
+                mat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                return mat;
+            };
+
+            const createCard = (pos, rot, imgUrl) => {
+                const plane = BABYLON.MeshBuilder.CreatePlane("card", { width: 4, height: 6 }, scene);
+                plane.position = pos;
+                plane.rotation = rot; // Rotation beachten!
+                plane.material = createMat(imgUrl);
+
+                // Schwebe-Animation
+                const anim = new BABYLON.Animation("float", "position.y", 30, BABYLON.Animation.ANIMATIONTYPE_FLOAT, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+                const keys = [{ frame: 0, value: pos.y }, { frame: 60, value: pos.y + 0.5 }, { frame: 120, value: pos.y }];
+                anim.setKeys(keys);
+                plane.animations.push(anim);
+                scene.beginAnimation(plane, 0, 120, true, 0.5 + Math.random());
+                return plane;
+            };
+
+            const createTextPlane = (text, pos, size = 10) => {
+                const plane = BABYLON.MeshBuilder.CreatePlane("textPlane", { width: size * 2, height: size }, scene);
+                plane.position = pos;
+                // Text soll zur Kamera zeigen (-25), also müssen wir ihn evtl drehen,
+                // oder wir lassen ihn auf Z=0 und drehen ihn um 180 Grad (PI), wenn er falsch rum ist.
+                // Da wir nun von -25 schauen, sollte der Text "normal" erstellt auch lesbar sein.
+
+                const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(plane);
+                const textBlock = new BABYLON.GUI.TextBlock();
+                textBlock.text = text;
+                textBlock.color = "white";
+                textBlock.fontSize = 70;
+                textBlock.fontFamily = "Segoe UI";
+                textBlock.fontWeight = "bold";
+                advancedTexture.addControl(textBlock);
+                return plane;
+            };
+
+            // --- INHALT ---
+
+            // Hintergrund (Weit hinten, also positives Z)
+            const bgPlane = BABYLON.MeshBuilder.CreatePlane("bg", { width: 100, height: 100 }, scene);
+            bgPlane.position.z = 40;
+            bgPlane.position.y = -20;
+            // Wir drehen den Hintergrund um 180 Grad, damit er zu unserer neuen Kamera (-25) schaut
+            bgPlane.rotation.y = Math.PI;
+            bgPlane.material = createMat("https://picsum.photos/id/1002/1000/1000");
+            bgPlane.material.emissiveColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+
+            createTextPlane("SCROLL\nDOWN", new BABYLON.Vector3(0, 3, 0), 12);
+
+            // Ebene 1
+            // Bilder müssen jetzt "zu uns" schauen. 
+            // Da Plane standardmäßig nach -Z schaut und wir bei -Z sind, schauen sie uns direkt an. Perfekt.
+            createCard(new BABYLON.Vector3(-4, -8, 5), new BABYLON.Vector3(0, 0, -0.1), "https://picsum.photos/200/300?r=1");
+            createCard(new BABYLON.Vector3(4, -12, 8), new BABYLON.Vector3(0, 0, 0.1), "https://picsum.photos/200/300?r=2");
+
+            createTextPlane("TIEFE", new BABYLON.Vector3(0, -10, -2), 10);
+
+            // Ebene 2
+            createCard(new BABYLON.Vector3(-5, -22, 10), new BABYLON.Vector3(0, 0.2, 0), "https://picsum.photos/200/300?r=3");
+            createCard(new BABYLON.Vector3(0, -25, 0), new BABYLON.Vector3(0, 0, 0), "https://picsum.photos/200/300?r=4");
+
+            createTextPlane("ENDE", new BABYLON.Vector3(0, -35, 0), 10);
+
+
+            // --- NEUE SCROLL LOGIK (WICHTIG!) ---
+
+            // Variable, wo die Kamera hin soll
+            let targetCameraY = camera.position.y;
+
+            // Grenzen festlegen (Wie weit darf man scrollen?)
+            const topLimit = 5;
+            const bottomLimit = -40;
+
+            // Scroll-Geschwindigkeit
+            const scrollSensitivity = 0.005;
+
+            // Wir hören direkt auf das Ereignis "POINTERWHEEL" innerhalb der Scene
+            scene.onPointerObservable.add((pointerInfo) => {
+                if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERWHEEL) {
+                    const event = pointerInfo.event;
+
+                    // deltaY ist positiv beim Runterscrollen, negativ beim Hochscrollen
+                    const delta = event.deltaY;
+
+                    if (delta > 0) {
+                        // Runterscrollen -> Y wird kleiner (wir gehen in den Keller)
+                        targetCameraY -= 5;
+                    } else {
+                        // Hochscrollen
+                        targetCameraY += 5;
+                    }
+
+                    // Begrenzung (Clamping), damit man nicht ins Unendliche scrollt
+                    if (targetCameraY > topLimit) targetCameraY = topLimit;
+                    if (targetCameraY < bottomLimit) targetCameraY = bottomLimit;
+                }
+            });
+
+            // Render Loop Update
+            scene.registerBeforeRender(() => {
+                // "Lerp" sorgt für das weiche Nachziehen der Kamera
+                camera.position.y = BABYLON.Scalar.Lerp(camera.position.y, targetCameraY, 0.05);
+
+                // Leichte Maus-Parallax (Optional)
+                const mouseX = (scene.pointerX / window.innerWidth) - 0.5;
+                camera.position.x = BABYLON.Scalar.Lerp(camera.position.x, mouseX * 5, 0.05);
+            });
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(function () {
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+
+</html>

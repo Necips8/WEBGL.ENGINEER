@@ -1,0 +1,245 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Coding Crusader's</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+    <style>
+        html,
+        body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- <div class="ui">
+        <h1>HELLO WORLD</h1>
+        <p>The foundation of 3D web experiences with Babylon.js.</p>
+    </div> -->
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+
+        function createScene() {
+            var scene = new BABYLON.Scene(engine);
+            scene.clearColor = BABYLON.Color3.Black();
+
+            var camera = new BABYLON.ArcRotateCamera("camera1",
+                BABYLON.Tools.ToRadians(-90),
+                BABYLON.Tools.ToRadians(90),
+                80, new BABYLON.Vector3(0, 0, 0), scene);
+            camera.attachControl(canvas, true);
+
+
+            BABYLON.GaussianSplattingMesh.prototype.createBuffer = function (splats) {
+                const vertexSize = 32; // 3 * 4 + 3 * 4 + 4 + 4 = 32 bytes per vertex
+                const vertexCount = splats.length;
+                const buffer = new ArrayBuffer(vertexCount * vertexSize);
+                const fBuffer = new Float32Array(buffer);
+                const uBuffer = new Uint8Array(buffer);
+
+                for (let i = 0; i < vertexCount; i++) {
+                    const splat = splats[i];
+                    const offset = i * 8;
+                    const byteOffset = i * 32;
+
+                    // Position
+                    fBuffer[offset + 0] = splat.position[0];
+                    fBuffer[offset + 1] = splat.position[1];
+                    fBuffer[offset + 2] = splat.position[2];
+
+                    // Scale
+                    fBuffer[offset + 3] = splat.scale[0];
+                    fBuffer[offset + 4] = splat.scale[1];
+                    fBuffer[offset + 5] = splat.scale[2];
+
+                    // Color
+                    uBuffer[byteOffset + 24] = Math.floor(splat.color[0] * 255);
+                    uBuffer[byteOffset + 25] = Math.floor(splat.color[1] * 255);
+                    uBuffer[byteOffset + 26] = Math.floor(splat.color[2] * 255);
+                    uBuffer[byteOffset + 27] = Math.floor(splat.color[3] * 255);
+
+                    // Quaternion
+                    uBuffer[byteOffset + 28] = Math.floor(splat.quaternion[3] * 128 + 128); // W component
+                    uBuffer[byteOffset + 29] = Math.floor(splat.quaternion[0] * 128 + 128);
+                    uBuffer[byteOffset + 30] = Math.floor(splat.quaternion[1] * 128 + 128);
+                    uBuffer[byteOffset + 31] = Math.floor(splat.quaternion[2] * 128 + 128);
+                }
+
+                return buffer;
+            }
+
+
+
+            let sun = new BABYLON.Vector3(20, 20, 0);
+
+            let earth = new BABYLON.Vector3(0, 0, 0);
+            let earthRadius = 10;
+
+            const splats = [];
+
+            // Kugel-Splats
+            const maxSplats = 1000;
+            for (let i = 0; i < maxSplats; i++) {
+                // Zufällige Richtung auf der Kugel (Sphäre)
+                const theta = Math.acos(2 * Math.random() - 1); // [0, pi]
+                const phi = 2 * Math.PI * Math.random(); // [0, 2pi]
+                // Punkt auf Kugeloberfläche
+                const x = earth.x + earthRadius * Math.sin(theta) * Math.cos(phi);
+                const y = earth.y + earthRadius * Math.sin(theta) * Math.sin(phi);
+                const z = earth.z + earthRadius * Math.cos(theta);
+                const pos = [x, y, z];
+                // Normalenvektor (zeigt von Mittelpunkt zum Punkt)
+                const norm = [x - earth.x, y - earth.y, z - earth.z];
+                const normalLen = Math.sqrt(norm[0] ** 2 + norm[1] ** 2 + norm[2] ** 2);
+                const normal = [norm[0] / normalLen, norm[1] / normalLen, norm[2] / normalLen];
+                // Richtung von Punkt zu Sonne
+                const lightVec = [sun.x - x, sun.y - y, sun.z - z];
+                const lightLen = Math.sqrt(lightVec[0] ** 2 + lightVec[1] ** 2 + lightVec[2] ** 2);
+                lightVec[0] /= lightLen;
+                lightVec[1] /= lightLen;
+                lightVec[2] /= lightLen;
+                // Lambert'sches Gesetz
+                let intensity = normal[0] * lightVec[0] + normal[1] * lightVec[1] + normal[2] * lightVec[2];
+                intensity = Math.max(0, intensity);
+                // Farbe: Gelblich, abhängig von Intensität
+                const color = [
+                    0.9 * intensity + 0.1,
+                    0.9 * intensity + 0.1,
+                    0.2 + 0.8 * intensity,
+                    0.5
+                ];
+                // Splat-Größe
+                const s = 0.75 + Math.random() * 0.3;
+                splats.push({
+                    position: [x, -y, z],
+                    scale: [s, s, s],
+                    color: color,
+                    quaternion: [0, 0, 0, 0]
+                });
+            }
+
+
+
+            // Splats für Lichtstrahl von Sonne zu Erde
+            const numRaySplats = 10;
+            const sunScale = 1;
+            const earthScale = 8;
+            for (let j = 0; j <= numRaySplats; j++) {
+                const t = j / numRaySplats;
+                // Interpolierte Position zwischen Sonne und Erde
+                const rx = sun.x + t * (earth.x - sun.x);
+                const ry = sun.y + t * (earth.y - sun.y);
+                const rz = sun.z + t * (earth.z - sun.z);
+                // Skalierung von Sonne zu Erde
+                const s_ray = (sunScale + (earthScale - sunScale) * t);
+                splats.push({
+                    position: [rx, -ry, rz],
+                    scale: [s_ray, s_ray, s_ray],
+                    color: [1, 1, 1, 0.3],
+                    quaternion: [0, 0, 0, 0]
+                });
+            }
+
+
+
+            fetch("https://assets.babylonjs.com/fonts/Droid Sans_Regular.json")
+                .then(response => response.json())
+                .then(fontData => {
+                    var myText = BABYLON.MeshBuilder.CreateText("myText", "Hello World!", fontData, {
+                        size: 2,
+                        resolution: 64,
+                        depth: 0.5
+                    });
+                    myText.position = new BABYLON.Vector3(0, -earthRadius - 4, - earthRadius - 4);
+
+                    myText.material = new BABYLON.StandardMaterial("textMat", scene);
+                    myText.material.emissiveColor = new BABYLON.Color3(0.8, 0.2, 0.2);
+                    myText.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+                });
+
+
+
+            const gaussianMesh = new BABYLON.GaussianSplattingMesh(
+                'splat',
+                null,
+                scene,
+            );
+
+            const buffer = gaussianMesh.createBuffer(splats);
+
+            gaussianMesh.loadDataAsync(buffer);
+
+
+
+            // scene.registerBeforeRender(() => {
+            //     scene.activeCamera.alpha += 0.003;
+            // });
+
+            return scene;
+        };
+
+
+        // Szene initialisieren
+        const scene = createScene();
+
+        // KEINE UI mehr nötig
+
+        // Render-Loop starten
+        engine.runRenderLoop(() => {
+            scene.render();
+        });
+
+        // Fenster-Resize-Handler
+        window.addEventListener("resize", () => {
+            engine.resize();
+        });
+
+
+
+    </script>
+</body>
+
+</html>

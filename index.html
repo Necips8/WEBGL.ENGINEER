@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Necip | Creative Developer & Senior Backend Expert</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #00d4ff;
+            --bg-color: #0a0a0c;
+            --text-color: #ffffff;
+            --accent-color: #ff007a;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-color);
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            overflow-y: hidden;
+        }
+
+        .section {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 0 10%;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.8s ease-in-out;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        .section.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: clamp(2.5rem, 8vw, 4rem);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5rem;
+            background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h2 {
+            font-size: clamp(1rem, 4vw, 1.5rem);
+            font-weight: 300;
+            margin-top: 0;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .content-box {
+            background: rgba(20, 20, 25, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 1000px;
+            width: 100%;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        /* Custom Scrollbar for content box */
+        .content-box::-webkit-scrollbar { width: 8px; }
+        .content-box::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .content-box::-webkit-scrollbar-thumb { background: var(--primary-color); border-radius: 4px; }
+
+        .tech-icons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 2.5rem;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .tech-icon {
+            width: 70px;
+            height: 70px;
+            object-fit: contain;
+            filter: grayscale(1) brightness(2);
+            transition: filter 0.3s, transform 0.3s;
+            display: block;
+        }
+
+        .tech-icon:hover {
+            filter: grayscale(0) brightness(1);
+            transform: scale(1.1);
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            text-align: left;
+            margin-top: 1.5rem;
+        }
+
+        .grid-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.2rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .grid-item h4 {
+            color: var(--primary-color);
+            margin: 0 0 0.5rem 0;
+        }
+
+        .career-list {
+            text-align: left;
+            max-width: 800px;
+            margin: 1.5rem auto 0;
+        }
+
+        .career-entry {
+            border-left: 2px solid var(--primary-color);
+            padding-left: 1.5rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .career-entry::before {
+            content: '';
+            position: absolute;
+            left: -7px;
+            top: 0;
+            width: 12px;
+            height: 12px;
+            background: var(--primary-color);
+            border-radius: 50%;
+        }
+
+        .career-date {
+            font-weight: bold;
+            color: var(--accent-color);
+            font-size: 0.9rem;
+        }
+
+        .portfolio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            width: 100%;
+        }
+
+        .portfolio-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            border-radius: 10px;
+            cursor: pointer;
+            color: white;
+            transition: transform 0.3s, background 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+        }
+
+        .portfolio-item:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--primary-color);
+        }
+
+        /* Iframe Preview Overlay */
+        #preview-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            pointer-events: auto;
+        }
+
+        #preview-overlay.active { display: flex; }
+
+        #preview-header {
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #111;
+            border-bottom: 1px solid var(--primary-color);
+        }
+
+        #close-preview {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #preview-frame {
+            flex-grow: 1;
+            border: none;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2rem;
+            opacity: 0.5;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0) translateX(-50%);}
+            40% {transform: translateY(-10px) translateX(-50%);}
+            60% {transform: translateY(-5px) translateX(-50%);}
+        }
+
+        #hello-world-container {
+            width: 100%;
+            height: 40vh;
+            margin-top: 1rem;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .interaction-hint {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            pointer-events: none;
+            border: 1px solid var(--primary-color);
+            backdrop-filter: blur(4px);
+            z-index: 5;
+        }
+
+        #hello-world-iframe { width: 100%; height: 100%; border: none; }
+        
+        footer { margin-top: 2rem; font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); }
+        a { color: var(--primary-color); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Navigation Dots */
+        #nav-dots {
+            position: fixed;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--primary-color);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: transparent;
+            pointer-events: auto;
+        }
+
+        .dot.active {
+            background: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-color);
+            transform: scale(1.3);
+        }
+
+        .dot:hover {
+            background: rgba(0, 212, 255, 0.5);
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="ui-layer">
+        <!-- 1. Hero Section -->
+        <section id="hero" class="section active">
+            <h1>Necip</h1>
+            <h2>Creative Tech Artist & Senior Backend Expert</h2>
+            <div class="scroll-indicator">Scrollen zum Entdecken</div>
+        </section>
+
+        <!-- 2. Hello World Section -->
+        <section id="hello-world" class="section">
+            <div class="content-box">
+                <h3>Interaktive 3D-Welten</h3>
+                <p>Kreatives Coding trifft auf technische Präzision.</p>
+                <div id="hello-world-container">
+                    <div class="interaction-hint">Maus: Drehen & Zoomen</div>
+                    <iframe id="hello-world-iframe" src="examples/helloWorld.html"></iframe>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Expertise Section -->
+        <section id="expertise" class="section">
+            <div class="content-box">
+                <h3>Expertise & Technologien</h3>
+                <p>Über 30 Jahre Erfahrung in der Softwareentwicklung. Fokus auf E-Commerce und moderne Backend-Architekturen.</p>
+                <div class="tech-icons">
+                    <img src="media/php.svg" alt="PHP" class="tech-icon" title="PHP">
+                    <img src="media/symfony.svg" alt="Symfony" class="tech-icon" title="Symfony">
+                    <img src="media/shopware.svg" alt="Shopware" class="tech-icon" title="Shopware">
+                    <img src="media/vue.svg" alt="Vue.js" class="tech-icon" title="Vue.js">
+                    <img src="media/docker.svg" alt="Docker" class="tech-icon" title="Docker">
+                    <img src="media/github.svg" alt="GitHub" class="tech-icon" title="GitHub">
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Beruflicher Werdegang -->
+        <section id="career" class="section">
+            <div class="content-box">
+                <h3>Beruflicher Werdegang</h3>
+                <div class="career-list">
+                    <div class="career-entry">
+                        <span class="career-date">2026 – 2026</span>
+                        <h4>MACS HOLDING GmbH</h4>
+                        <p>Senior Developer | Shopware 6, Brevo, PlentyMarket Integrationen.</p>
+                    </div>
+                    <div class="career-entry">
+                        <span class="career-date">2025 – 2026</span>
+                        <h4>MjAMjAM Petfood GmbH</h4>
+                        <p>Senior Backend Expert | Shopware 6, Marketing Automation.</p>
+                    </div>
+                    <div class="career-entry">
+                        <span class="career-date">2023 – 2025</span>
+                        <h4>HRZN</h4>
+                        <p>Lead Developer | E-Commerce Lösungen & Schnittstellenbau.</p>
+                    </div>
+                    <div class="career-entry">
+                        <span class="career-date">Frühere Stationen</span>
+                        <p>K&K Consulting, Koviko, AquaSoft, adecc Systemhaus, AT+C GmbH.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. Projekt Highlights -->
+        <section id="highlights" class="section">
+            <div class="content-box">
+                <h3>Projekt Highlights</h3>
+                <div class="grid-layout">
+                    <div class="grid-item">
+                        <h4>KI-Modernisierung</h4>
+                        <p>Portierung eines Partnerprogramms von SW5 auf SW6 in nur 2 Tagen statt 3 Wochen durch strategisches KI-Refactoring.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Performance Boost</h4>
+                        <p>Optimierung eines komplexen Bewertungsmanagers von mehreren Minuten auf wenige Sekunden Laufzeit.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Schnittstellen-Architektur</h4>
+                        <p>Bau komplexer Connectoren (Brevo, PlentyMarkets) und Emulatoren zur System-Simulation.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Custom Plugins</h4>
+                        <p>Entwicklung des "PetProfil"-Plugins für personalisierte Marketing-Daten in Shopware 6.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. Arbeitsweise & Stärken -->
+        <section id="methodology" class="section">
+            <div class="content-box">
+                <h3>Arbeitsweise & Stärken</h3>
+                <div class="grid-layout">
+                    <div class="grid-item">
+                        <h4>AI-Assisted Development</h4>
+                        <p>Extreme Effizienzsteigerung (Faktor 10x) durch Integration von KI-Tools bei gleichzeitig höchster Code-Qualität.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Remote-Experte</h4>
+                        <p>Jahrzehntelange Erfahrung in autonomer Arbeit und effizienter Remote-Kollaboration.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Problemlöser</h4>
+                        <p>Schnelle Stabilisierung und Modernisierung von Legacy-Systemen und komplexen Infrastrukturen.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h4>Pragmatismus</h4>
+                        <p>Zielorientierte Umsetzung mit Fokus auf Skalierbarkeit, Sicherheit und CI/CD-Standards.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. Portfolio Gallery -->
+        <section id="portfolio" class="section">
+            <div class="content-box">
+                <h3>Creative Coding Gallery</h3>
+                <div class="portfolio-grid" id="portfolio-grid"></div>
+            </div>
+        </section>
+
+        <!-- 8. Contact Section -->
+        <section id="contact" class="section">
+            <div class="content-box">
+                <h3>Kontakt & Kanäle</h3>
+                <p>Bereit für die nächste Herausforderung im E-Commerce oder im Creative Tech Bereich.</p>
+                <p>
+                    <a href="https://github.com/Necips8" target="_blank">GitHub Profile</a>                      
+                </p>
+                <footer>
+                    &copy; 2026 necips@live.de - Senior Informatiker.
+                </footer>
+            </div>
+        </section>
+    </div>
+
+    <!-- Preview Overlay -->
+    <div id="preview-overlay">
+        <div id="preview-header">
+            <span id="preview-title">Vorschau</span>
+            <button id="close-preview" onclick="closePreview()">Schließen</button>
+        </div>
+        <iframe id="preview-frame" src=""></iframe>
+    </div>
+
+    <script>
+        const examples = [
+            // { url: 'examples/boidsGpu.html', title: 'GPU Boids', desc: 'GPU-beschleunigte Schwarmsimulation' },
+            // { url: 'examples/cloudsBeyond.html', title: 'Clouds Beyond', desc: 'Wolkensimulation' },
+            // { url: 'examples/defender.html', title: 'Defender', desc: 'Spielelogik' },
+            { url: 'examples/indexCloudyScene.html', title: 'Cloudy Scene', desc: '3D Landschaften' },
+            { url: 'examples/indexNetVideo.html', title: 'Net Video', desc: 'Visualisierung' },
+            // { url: 'examples/lowPolyWorld.html', title: 'Low Poly World', desc: '3D Welten' },
+            { url: 'examples/marchingCubesSphere1.html', title: 'Marching Cubes', desc: 'Algorithmen' },
+            // { url: 'examples/noiceParticle3.html', title: 'Noise Particles', desc: 'Partikelsysteme' },
+            // { url: 'examples/oceanBraunianMotion2.html', title: 'Ocean Motion V1', desc: 'Wellen-Simulation' },
+            // { url: 'examples/oceanBraunianMotion2a.html', title: 'Ocean Motion V2', desc: 'Wellen-Simulation' },
+            // { url: 'examples/oceanBraunianMotion2b.html', title: 'Ocean Motion V3', desc: 'Wellen-Simulation' },
+            { url: 'examples/oceanBraunianMotion2c1.html', title: 'Heaven & Hell', desc: 'Procedural shader effect' },
+            // { url: 'examples/parallaxWebSite.html', title: 'Parallax Journey', desc: 'Navigation' },
+            { url: 'examples/slime.html', title: 'Slime Simulation', desc: 'Physik-basierte Simulation' },
+            { url: 'examples/swarm.html', title: 'Swarm', desc: 'Schwarm-Intelligenz' },
+            // { url: 'examples/wind1.html', title: 'Wind', desc: 'Wind-Effekte' },
+            // { url: 'examples/worldSphereFog.html', title: 'Atmospheric Sphere', desc: 'Atmosphäre' }
+        ];
+
+        const portfolioGrid = document.getElementById('portfolio-grid');
+        examples.forEach(ex => {
+            const item = document.createElement('div');
+            item.className = 'portfolio-item';
+            item.onclick = () => openPreview(ex.url, ex.title);
+            item.innerHTML = `<h4>${ex.title}</h4><p>${ex.desc}</p>`;
+            portfolioGrid.appendChild(item);
+        });
+
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+        const sections = document.querySelectorAll('.section');
+        const previewOverlay = document.getElementById('preview-overlay');
+        const previewFrame = document.getElementById('preview-frame');
+        const previewTitle = document.getElementById('preview-title');
+
+        let targetCameraY = 0;
+        const sectionHeight = 60;
+
+        // Create Navigation Dots
+        const navDotsContainer = document.createElement('div');
+        navDotsContainer.id = 'nav-dots';
+        document.body.appendChild(navDotsContainer);
+
+        sections.forEach((_, idx) => {
+            const dot = document.createElement('div');
+            dot.className = 'dot' + (idx === 0 ? ' active' : '');
+            dot.title = sections[idx].querySelector('h3')?.innerText || sections[idx].querySelector('h1')?.innerText || `Sektion ${idx + 1}`;
+            dot.onclick = () => {
+                targetCameraY = -idx * sectionHeight;
+            };
+            navDotsContainer.appendChild(dot);
+        });
+
+        const dots = document.querySelectorAll('.dot');
+
+        function openPreview(url, title) {
+            previewFrame.src = url;
+            previewTitle.innerText = title;
+            previewOverlay.classList.add('active');
+        }
+
+        function closePreview() {
+            previewOverlay.classList.remove('active');
+            previewFrame.src = "";
+        }
+        
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.04, 0.04, 0.05, 1);
+            scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+            scene.fogDensity = 0.01;
+            scene.fogColor = new BABYLON.Color3(0.04, 0.04, 0.05);
+
+            const camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 0, -20), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            const noiseTexture = new BABYLON.NoiseProceduralTexture("perlin", 256, scene);
+            noiseTexture.animationSpeedFactor = 0.1;
+            noiseTexture.persistence = 0.8;
+
+            const bgSphere = BABYLON.MeshBuilder.CreateSphere("bgSphere", {diameter: 150, segments: 32}, scene);
+            const bgMat = new BABYLON.StandardMaterial("bgMat", scene);
+            bgMat.emissiveTexture = noiseTexture;
+            bgMat.backFaceCulling = false;
+            bgMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.2);
+            bgSphere.material = bgMat;
+
+            const floatingGroup = new BABYLON.TransformNode("floatingGroup");
+            for (let i = 0; i < 50; i++) {
+                const box = BABYLON.MeshBuilder.CreateBox("box" + i, {size: Math.random() * 2 + 0.5}, scene);
+                box.position = new BABYLON.Vector3(
+                    (Math.random() - 0.5) * 60,
+                    (Math.random() - 0.5) * 400 - 100,
+                    (Math.random() - 0.5) * 40
+                );
+                box.parent = floatingGroup;
+                box.material = new BABYLON.StandardMaterial("boxMat" + i, scene);
+                box.material.diffuseColor = new BABYLON.Color3(0, 0.8, 1);
+                box.material.emissiveColor = new BABYLON.Color3(0, 0.1, 0.2);
+            }
+
+            const maxScroll = (sections.length - 1) * sectionHeight;
+
+            window.addEventListener("wheel", (e) => {
+                targetCameraY -= e.deltaY * 0.1;
+                if (targetCameraY > 0) targetCameraY = 0;
+                if (targetCameraY < -maxScroll) targetCameraY = -maxScroll;
+            });
+
+            scene.registerBeforeRender(() => {
+                camera.position.y = BABYLON.Scalar.Lerp(camera.position.y, targetCameraY, 0.05);
+                const currentSectionIndex = Math.round(Math.abs(camera.position.y) / sectionHeight);
+                sections.forEach((s, idx) => {
+                    if (idx === currentSectionIndex) {
+                        s.classList.add('active');
+                        dots[idx]?.classList.add('active');
+                    } else {
+                        s.classList.remove('active');
+                        dots[idx]?.classList.remove('active');
+                    }
+                });
+                bgSphere.rotation.y += 0.0003;
+                floatingGroup.rotation.y += 0.0008;
+            });
+
+            return scene;
+        };
+
+        const scene = createScene();
+        engine.runRenderLoop(() => scene.render());
+        window.addEventListener("resize", () => engine.resize());
+    </script>
+</body>
+</html>

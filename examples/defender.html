@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defender-Style Game mit Babylon.js</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs@5.0.0/babylon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@5.0.0/babylonjs.loaders.min.js"></script>
+    <style>
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Press Start 2P', Arial, sans-serif;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        #gameUI {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            z-index: 10;
+        }
+
+        #gameStartScreen,
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            z-index: 20;
+        }
+
+        .gameButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #minimap {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 200px;
+            height: 40px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid white;
+            z-index: 10;
+        }
+
+        @font-face {
+            font-family: 'Press Start 2P';
+            src: url('https://cdn.jsdelivr.net/npm/press-start-2p@1.0.0/index.css');
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>DEFENDER</h1>
+        <p>Arcade-style space combat logic and retro-inspired mechanics.</p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="gameUI">
+        <div>Score: <span id="scoreText">0</span></div>
+        <div>Lives: <span id="livesText">3</span></div>
+        <div>Astronauts Saved: <span id="savedText">0</span></div>
+    </div>
+
+    <div id="minimap"></div>
+
+    <div id="gameStartScreen">
+        <h1 class="text-4xl mb-4">DEFENDER</h1>
+        <p class="text-xl mb-8">Save the astronauts and defend the planet!</p>
+        <button class="gameButton" id="startButton">START GAME</button>
+        <div class="controls">
+            <p>Controls:</p>
+            <p>Arrow keys to move</p>
+            <p>Space to shoot</p>
+            <p>Hold Z for hyperspeed</p>
+        </div>
+    </div>
+
+    <div id="gameOverScreen" style="display: none;">
+        <h1 class="text-4xl mb-4">GAME OVER</h1>
+        <p class="text-xl mb-2">Your Score: <span id="finalScore">0</span></p>
+        <p class="text-xl mb-8">Astronauts Saved: <span id="finalSaved">0</span></p>
+        <button class="gameButton" id="restartButton">PLAY AGAIN</button>
+    </div>
+
+    <script>
+        // Spielvariablen
+        let score = 0;
+        let lives = 3;
+        let savedAstronauts = 0;
+        let totalAstronauts = 10; // Gesamtzahl der Astronauten
+        let gameState = "start"; // start, playing, gameOver
+
+        // Engine und Szene einrichten
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0, 0, 0.1, 1);
+
+            // Kamera für 2D-Spiel
+            const camera = new BABYLON.FreeCamera("camera", new BABYLON.Vector3(0, 0, -10), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+            camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+
+            // Kamera-Einstellungen für orthographische Ansicht
+            const orthoSize = 10;
+            camera.orthoTop = orthoSize;
+            camera.orthoBottom = -orthoSize;
+
+            // Seitenverhältnis korrekt anwenden
+            const aspectRatio = engine.getAspectRatio(camera);
+            camera.orthoLeft = -orthoSize * aspectRatio;
+            camera.orthoRight = orthoSize * aspectRatio;
+
+            // Beleuchtung
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            return scene;
+        };
+
+        const scene = createScene();
+        const camera = scene.getCameraByName("camera"); // Get the camera from the scene
+
+        // Spielwelt-Größe
+        const worldWidth = 200;
+        const worldHeight = 20;
+
+        // Spielobjekte
+        let player;
+        let playerShots = [];
+        let aliens = [];
+        let astronauts = [];
+        let playerSpeed = 0.2;
+        let hyperSpeed = 0.6;
+        let worldPosition = 0;
+        let playerDirection = 1; // 1 = rechts, -1 = links
+
+        // Spielwelt erstellen
+        const createWorld = function () {
+            // Hintergrund mit Sternen
+            createStarfield(scene);
+
+            // Planetenoberfläche erstellen
+            const ground = BABYLON.MeshBuilder.CreateBox("ground", {
+                width: worldWidth,
+                height: 1,
+                depth: 1
+            }, scene);
+            ground.position.y = -9.5;
+            ground.material = new BABYLON.StandardMaterial("groundMat", scene);
+            ground.material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+            ground.material.emissiveColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+
+            // Berge für Landschaft
+            createTerrain(scene);
+
+            // Spielerraumschiff erstellen
+            player = BABYLON.MeshBuilder.CreateBox("player", { width: 1.5, height: 0.7, depth: 0.2 }, scene);
+            player.position = new BABYLON.Vector3(0, 0, 0);
+            player.invulnerable = true; // Kurze Unverwundbarkeit am Anfang
+
+            // Unverwundbarkeit nach 2 Sekunden aufheben
+            setTimeout(() => {
+                player.invulnerable = false;
+            }, 2000);
+
+            const playerMat = new BABYLON.StandardMaterial("playerMat", scene);
+            playerMat.diffuseColor = new BABYLON.Color3(0, 0.8, 1);
+            playerMat.emissiveColor = new BABYLON.Color3(0, 0.4, 0.8);
+            player.material = playerMat;
+
+            // Spielertriebwerk hinzufügen
+            const engine1 = BABYLON.MeshBuilder.CreateBox("engine1", { width: 0.3, height: 0.3, depth: 0.1 }, scene);
+            engine1.parent = player;
+            engine1.position.x = -0.7;
+            engine1.material = new BABYLON.StandardMaterial("engineMat", scene);
+            engine1.material.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+
+            // Astronauten und Aliens erstellen
+            totalAstronauts = 10; // Gesamtzahl der Astronauten
+            spawnAstronauts(totalAstronauts);
+
+            // Aliens mit Verzögerung spawnen, damit der Spieler Zeit hat
+            setTimeout(() => {
+                // Nur 5 Aliens zu Beginn spawnen
+                spawnAliens(5);
+            }, 1500);
+        };
+
+        const createStarfield = function (scene) {
+            const starCount = 300;
+            const starSize = 0.05;
+
+            for (let i = 0; i < starCount; i++) {
+                const x = (Math.random() * worldWidth) - (worldWidth / 2);
+                const y = (Math.random() * worldHeight) - (worldHeight / 2) + 5;
+                const z = Math.random() * -2;
+
+                const star = BABYLON.MeshBuilder.CreateBox("star" + i, { width: starSize, height: starSize, depth: starSize }, scene);
+                star.position = new BABYLON.Vector3(x, y, z);
+
+                const starMat = new BABYLON.StandardMaterial("starMat" + i, scene);
+                starMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+                star.material = starMat;
+
+                // Blinkeffekt für einige Sterne
+                if (Math.random() > 0.7) {
+                    const blinkAnim = new BABYLON.Animation(
+                        "blinkAnim" + i,
+                        "material.alpha",
+                        10,
+                        BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                        BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                    );
+
+                    const keys = [];
+                    keys.push({ frame: 0, value: 1.0 });
+                    keys.push({ frame: Math.random() * 20 + 20, value: 0.2 });
+                    keys.push({ frame: Math.random() * 40 + 40, value: 1.0 });
+                    blinkAnim.setKeys(keys);
+
+                    star.animations = [blinkAnim];
+                    scene.beginAnimation(star, 0, 60, true);
+                }
+            }
+        };
+
+        const createTerrain = function (scene) {
+            const terrainSegments = 40;
+            const segmentWidth = worldWidth / terrainSegments;
+
+            for (let i = 0; i < terrainSegments; i++) {
+                const height = Math.random() * 2 + 0.5;
+                const terrain = BABYLON.MeshBuilder.CreateBox("terrain" + i, {
+                    width: segmentWidth - 0.1,
+                    height: height,
+                    depth: 1
+                }, scene);
+
+                terrain.position.x = (i * segmentWidth) - (worldWidth / 2) + (segmentWidth / 2);
+                terrain.position.y = -9 + (height / 2);
+
+                const terrainMat = new BABYLON.StandardMaterial("terrainMat" + i, scene);
+                terrainMat.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.2);
+                terrainMat.alpha = 0.5;
+                terrain.material = terrainMat;
+            }
+        };
+
+        const spawnAstronauts = function (count) {
+            for (let i = 0; i < count; i++) {
+                const x = (Math.random() * (worldWidth - 20)) - (worldWidth / 2) + 10;
+
+                const astronaut = BABYLON.MeshBuilder.CreateBox("astronaut" + i, { width: 0.4, height: 0.8, depth: 0.2 }, scene);
+                astronaut.position = new BABYLON.Vector3(x, -8.5, 0);
+
+                const astroMat = new BABYLON.StandardMaterial("astroMat" + i, scene);
+                astroMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+                astroMat.emissiveColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+                astronaut.material = astroMat;
+
+                // Helm hinzufügen
+                const helmet = BABYLON.MeshBuilder.CreateSphere("helmet" + i, { diameter: 0.5 }, scene);
+                helmet.parent = astronaut;
+                helmet.position.y = 0.5;
+
+                const helmetMat = new BABYLON.StandardMaterial("helmetMat" + i, scene);
+                helmetMat.diffuseColor = new BABYLON.Color3(1, 0.8, 0);
+                helmetMat.alpha = 0.7;
+                helmet.material = helmetMat;
+
+                astronaut.isAbducted = false;
+                astronaut.abductor = null;
+
+                astronauts.push(astronaut);
+            }
+        };
+
+        const spawnAliens = function (count) {
+            for (let i = 0; i < count; i++) {
+                spawnAlien();
+            }
+        };
+
+        const spawnAlien = function () {
+            const x = (Math.random() * (worldWidth - 20)) - (worldWidth / 2) + 10;
+            const y = Math.random() * 10 + 2;
+
+            const alien = BABYLON.MeshBuilder.CreateBox("alien", { width: 1, height: 1, depth: 0.2 }, scene);
+            alien.position = new BABYLON.Vector3(x, y, 0);
+
+            const alienMat = new BABYLON.StandardMaterial("alienMat", scene);
+            alienMat.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2);
+            alienMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
+            alien.material = alienMat;
+
+            // Alien Flügel hinzufügen
+            const wing1 = BABYLON.MeshBuilder.CreateBox("wing1", { width: 0.8, height: 0.2, depth: 0.1 }, scene);
+            wing1.parent = alien;
+            wing1.position.x = 0.8;
+
+            const wing2 = BABYLON.MeshBuilder.CreateBox("wing2", { width: 0.8, height: 0.2, depth: 0.1 }, scene);
+            wing2.parent = alien;
+            wing2.position.x = -0.8;
+
+            // Alien Auge hinzufügen
+            const eye = BABYLON.MeshBuilder.CreateSphere("eye", { diameter: 0.4 }, scene);
+            eye.parent = alien;
+            eye.position.z = 0.2;
+
+            const eyeMat = new BABYLON.StandardMaterial("eyeMat", scene);
+            eyeMat.diffuseColor = new BABYLON.Color3(0.9, 0.9, 0);
+            eye.material = eyeMat;
+
+            // Logik für das Alien
+            alien.direction = Math.random() > 0.5 ? 1 : -1;
+            alien.speed = Math.random() * 0.05 + 0.03;
+            alien.isAbducting = false;
+            alien.target = null;
+
+            // 30% Chance, sofort einen Astronauten zu suchen (reduziert von 50%)
+            if (Math.random() < 0.3) {
+                const freeAstronauts = astronauts.filter(astro => !astro.isAbducted);
+
+                if (freeAstronauts.length > 0) {
+                    // Zufälligen Astronauten auswählen
+                    const randomIndex = Math.floor(Math.random() * freeAstronauts.length);
+                    const target = freeAstronauts[randomIndex];
+
+                    alien.isAbducting = true;
+                    alien.target = target;
+                    target.isAbducted = true;
+                    target.abductor = alien;
+
+                    console.log("New alien targeting astronaut");
+                }
+            }
+
+            aliens.push(alien);
+            return alien;
+        };
+
+        // Schüsse verwalten
+        const createPlayerShot = function () {
+            const shot = BABYLON.MeshBuilder.CreateBox("playerShot", { width: 0.5, height: 0.2, depth: 0.1 }, scene);
+            shot.position = new BABYLON.Vector3(
+                player.position.x + (0.8 * playerDirection),
+                player.position.y,
+                0
+            );
+
+            const shotMat = new BABYLON.StandardMaterial("shotMat", scene);
+            shotMat.emissiveColor = new BABYLON.Color3(0, 1, 1);
+            shot.material = shotMat;
+
+            shot.direction = playerDirection;
+            shot.speed = 0.4;
+            shot.lifeTime = 100;
+
+            playerShots.push(shot);
+        };
+
+        // Tastatureingaben verarbeiten
+        const keys = {};
+        const initControls = function () {
+            // Canvas fokussierbar machen
+            const canvas = document.getElementById("renderCanvas");
+            canvas.tabIndex = 1;
+
+            scene.onKeyboardObservable.add((kbInfo) => {
+                switch (kbInfo.type) {
+                    case BABYLON.KeyboardEventTypes.KEYDOWN:
+                        keys[kbInfo.event.key] = true;
+
+                        // Schießen
+                        if (kbInfo.event.key === " " && gameState === "playing") {
+                            createPlayerShot();
+                        }
+
+                        // Spiel starten / neu starten
+                        if (kbInfo.event.key === "Enter" && gameState !== "playing") {
+                            startGame();
+                        }
+                        break;
+                    case BABYLON.KeyboardEventTypes.KEYUP:
+                        keys[kbInfo.event.key] = false;
+                        break;
+                }
+            });
+
+            // Klick auf Canvas setzt auch den Fokus
+            canvas.addEventListener("click", function () {
+                canvas.focus();
+            });
+
+            // Buttons für Touch-Geräte und alternative Steuerung
+            document.getElementById("startButton").addEventListener("click", function () {
+                startGame();
+                canvas.focus(); // Fokus auf Canvas setzen nach Klick auf Start-Button
+            });
+
+            document.getElementById("restartButton").addEventListener("click", function () {
+                startGame();
+                canvas.focus(); // Fokus auf Canvas setzen nach Klick auf Restart-Button
+            });
+        };
+
+        // Spielzustände
+        const startGame = function () {
+            // Zurücksetzen der Spielvariablen
+            score = 0;
+            lives = 3;
+            savedAstronauts = 0;
+            totalAstronauts = 10; // Gesamtzahl der Astronauten
+            worldPosition = 0;
+            playerDirection = 1;
+
+            // Spielobjekte zurücksetzen
+            resetGameObjects();
+
+            // Spielzustand ändern
+            gameState = "playing";
+
+            // Sicherstellen, dass der Spieler sichtbar ist und keine Animation läuft
+            if (player) {
+                player.visibility = 1;
+                scene.stopAnimation(player);
+            }
+
+            // UI aktualisieren - nach dem Zurücksetzen der Objekte
+            updateUI();
+
+            // UI-Elemente anzeigen/ausblenden
+            document.getElementById("gameStartScreen").style.display = "none";
+            document.getElementById("gameOverScreen").style.display = "none";
+
+            // Fokus auf das Canvas-Element setzen, damit Tastatureingaben funktionieren
+            document.getElementById("renderCanvas").focus();
+        };
+
+        const gameOver = function (message = "") {
+            gameState = "gameOver";
+
+            // Final Score anzeigen
+            document.getElementById("finalScore").textContent = score;
+            document.getElementById("finalSaved").textContent = savedAstronauts;
+
+            // Nachricht anzeigen, wenn vorhanden
+            if (message) {
+                const messageElement = document.getElementById("gameOverMessage");
+                if (!messageElement) {
+                    // Element erstellen, falls es noch nicht existiert
+                    const messageDiv = document.createElement("p");
+                    messageDiv.id = "gameOverMessage";
+                    messageDiv.className = "text-xl mb-4";
+                    messageDiv.textContent = message;
+
+                    // Vor dem Restart-Button einfügen
+                    const restartButton = document.getElementById("restartButton");
+                    restartButton.parentNode.insertBefore(messageDiv, restartButton);
+                } else {
+                    messageElement.textContent = message;
+                }
+            }
+
+            // Game Over Screen anzeigen
+            document.getElementById("gameOverScreen").style.display = "flex";
+        };
+
+        const resetGameObjects = function () {
+            // Bestehende Objekte entfernen
+
+            player.dispose();
+
+            for (let shot of playerShots) {
+                shot.dispose();
+            }
+
+            for (let alien of aliens) {
+                alien.dispose();
+            }
+
+            for (let astronaut of astronauts) {
+                astronaut.dispose();
+            }
+
+            // Arrays zurücksetzen
+            playerShots = [];
+            aliens = [];
+            astronauts = [];
+
+            // Neue Spielwelt erstellen
+            createWorld();
+        };
+
+        // UI aktualisieren
+        const updateUI = function () {
+            document.getElementById("scoreText").textContent = score;
+            document.getElementById("livesText").textContent = lives;
+            document.getElementById("savedText").textContent = savedAstronauts;
+
+            // Minimap aktualisieren
+            updateMinimap();
+        };
+
+        // Minimap-Funktion
+        const updateMinimap = function () {
+            const minimap = document.getElementById("minimapCanvas");
+
+            if (!minimap) {
+                console.error("Minimap canvas not found!");
+                return;
+            }
+
+            const ctx = minimap.getContext("2d");
+
+            if (!ctx) {
+                console.error("Could not get 2D context for minimap!");
+                return;
+            }
+
+            minimap.width = 200;
+            minimap.height = 40;
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillRect(0, 0, minimap.width, minimap.height);
+
+            // Weltgrenzen für Y-Achse (von -9 bis 9)
+            const worldHeightRange = 18; // -9 bis 9
+
+            // Position des Spielers relativ zur Weltbreite und -höhe
+            const playerWorldX = player.position.x + worldPosition;
+            const playerPos = (playerWorldX + (worldWidth / 2)) / worldWidth * minimap.width;
+
+            // Y-Position skalieren (von -9 bis 9 auf 5 bis 35)
+            const playerPosY = 35 - ((player.position.y + 9) / worldHeightRange * 30);
+
+            // Spieler zeichnen
+            ctx.fillStyle = "cyan";
+            ctx.fillRect(playerPos - 3, playerPosY - 3, 6, 6);
+
+            // Aliens auf der Minimap zeichnen
+            ctx.fillStyle = "red";
+            for (let alien of aliens) {
+                const alienWorldX = alien.position.x + worldPosition;
+                const alienPos = (alienWorldX + (worldWidth / 2)) / worldWidth * minimap.width;
+                const alienPosY = 35 - ((alien.position.y + 9) / worldHeightRange * 30);
+                ctx.fillRect(alienPos - 2, alienPosY - 2, 4, 4);
+            }
+
+            // Astronauten auf der Minimap zeichnen
+            ctx.fillStyle = "white";
+            for (let astronaut of astronauts) {
+                const astroWorldX = astronaut.position.x + worldPosition;
+                const astroPos = (astroWorldX + (worldWidth / 2)) / worldWidth * minimap.width;
+                const astroPosY = 35 - ((astronaut.position.y + 9) / worldHeightRange * 30);
+                ctx.fillRect(astroPos - 1, astroPosY - 1, 3, 3);
+            }
+
+            // Grenzen des sichtbaren Bereichs zeichnen
+            const viewportWidth = 20 / worldWidth * minimap.width;
+            const viewportPos = playerPos - (viewportWidth / 2);
+
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(viewportPos, 5, viewportWidth, 30);
+        };
+
+        // Hauptspiellogik
+        const updateGame = function () {
+            if (gameState !== "playing") return;
+
+            // Spielersteuerung
+            handlePlayerControls();
+
+            // Kamera folgt Spieler
+            updateCameraPosition();
+
+            // Schüsse aktualisieren
+            updateShots();
+
+            // Aliens aktualisieren
+            updateAliens();
+
+            // Kollisionen prüfen
+            checkCollisions();
+
+            // Prüfen, ob alle Astronauten gerettet wurden
+            checkGameWinCondition();
+
+            // UI aktualisieren
+            updateUI();
+        };
+
+        const handlePlayerControls = function () {
+            let moveX = 0;
+            let moveY = 0;
+
+            // Bewegung
+            if (keys["ArrowUp"]) moveY += playerSpeed;
+            if (keys["ArrowDown"]) moveY -= playerSpeed;
+
+            // Horizontale Bewegung mit Richtungsänderung
+            if (keys["ArrowRight"]) {
+                moveX += playerSpeed;
+                if (playerDirection !== 1) {
+                    playerDirection = 1;
+                    player.scaling.x = Math.abs(player.scaling.x);
+                }
+            }
+            if (keys["ArrowLeft"]) {
+                moveX -= playerSpeed;
+                if (playerDirection !== -1) {
+                    playerDirection = -1;
+                    player.scaling.x = -Math.abs(player.scaling.x);
+                }
+            }
+
+            // Hypergeschwindigkeit
+            if (keys["z"]) {
+                moveX *= (hyperSpeed / playerSpeed);
+            }
+
+            // Spieler bewegen
+            player.position.x += moveX;
+            player.position.y += moveY;
+
+            // Spieler auf Spielfeld begrenzen
+            if (player.position.y > 8) player.position.y = 8;
+            if (player.position.y < -8) player.position.y = -8;
+
+            if (player.position.x > 100) player.position.x = 100;
+            if (player.position.x < -100) player.position.x = -100;
+
+
+            // Weltposition aktualisieren
+            worldPosition -= moveX;
+            // console.log(worldPosition);
+
+            // Zirkulare Welt
+            if (worldPosition < -(worldWidth / 2)) worldPosition = worldWidth / 2;
+            if (worldPosition > worldWidth / 2) worldPosition = -(worldWidth / 2);
+        };
+
+        const updateCameraPosition = function () {
+            // Kamera horizontal an Spielerposition ausrichten
+            let targetX = player.position.x + worldPosition;
+            worldPosition = 0; // Temporary fix
+            // Begrenzung, damit die Kamera nicht über die Welt hinausgeht
+            const cameraHalfWidth = camera.orthoRight; //oder camera.orthoLeft*-1
+            targetX = Math.max(Math.min(targetX, (worldWidth / 2) - cameraHalfWidth), (-worldWidth / 2) + cameraHalfWidth);
+            // console.log("targetX: " + targetX);
+            // console.log("player.position.x: " + player.position.x);
+            // console.log("worldPosition: " + worldPosition);
+            camera.position.x = targetX;
+        };
+
+        const updateShots = function () {
+            for (let i = playerShots.length - 1; i >= 0; i--) {
+                const shot = playerShots[i];
+
+                // Schuss bewegen
+                shot.position.x += shot.speed * shot.direction;
+
+                // Lebenszeit verringern
+                shot.lifeTime--;
+
+                // Schuss entfernen, wenn Lebenszeit abgelaufen
+                if (shot.lifeTime <= 0) {
+                    shot.dispose();
+                    playerShots.splice(i, 1);
+                }
+            }
+        };
+
+        const updateAliens = function () {
+            // Falls weniger als 3 Aliens, neue spawnen mit geringerer Wahrscheinlichkeit
+            if (aliens.length < 3 && Math.random() < 0.02) {
+                spawnAlien();
+            }
+
+            // Freie Astronauten finden (einmal pro Frame berechnen)
+            const freeAstronauts = astronauts.filter(astro => !astro.isAbducted);
+
+            for (let i = aliens.length - 1; i >= 0; i--) {
+                const alien = aliens[i];
+
+                // Wenn das Alien keinen Astronauten entführt, suche einen
+                if (!alien.isAbducting && freeAstronauts.length > 0 && Math.random() < 0.05) {
+                    // Nächsten Astronauten finden
+                    let closestAstro = null;
+                    let closestDist = 1000;
+
+                    for (let astro of freeAstronauts) {
+                        const dist = BABYLON.Vector3.Distance(alien.position, astro.position);
+                        if (dist < closestDist) {
+                            closestDist = dist;
+                            closestAstro = astro;
+                        }
+                    }
+
+                    if (closestAstro) {
+                        console.log("Alien targeting astronaut");
+                        alien.isAbducting = true;
+                        alien.target = closestAstro;
+                        alien.target.isAbducted = true;
+                        alien.target.abductor = alien;
+                    }
+                }
+
+                if (alien.isAbducting && alien.target) {
+                    // Entführungslogik
+                    if (alien.position.y > alien.target.position.y + 3) {
+                        // Zuerst nach unten fliegen, wenn Alien zu hoch ist
+                        alien.position.y -= 0.1;
+                    } else if (BABYLON.Vector3.Distance(alien.position, alien.target.position) > 2) {
+                        // Zum Astronauten fliegen
+                        const direction = alien.target.position.subtract(alien.position).normalize();
+                        alien.position.addInPlace(direction.scale(0.1));
+                    } else {
+                        // Nach oben fliegen mit dem Astronauten
+                        alien.position.y += 0.05;
+
+                        // Astronaut folgt dem Alien
+                        alien.target.position = new BABYLON.Vector3(
+                            alien.position.x,
+                            alien.position.y - 1,
+                            alien.position.z
+                        );
+
+                        // Wenn Alien außerhalb des Bildschirms, Astronaut entführt
+                        if (alien.position.y > 12) {
+                            // Astronaut und Alien entfernen
+                            astronauts.splice(astronauts.indexOf(alien.target), 1);
+                            aliens.splice(i, 1);
+                            alien.target.dispose();
+                            alien.dispose();
+
+                            // Punkte verlieren
+                            score -= 150;
+                            if (score < 0) score = 0;
+
+                            // Prüfen, ob alle Astronauten verloren sind
+                            if (astronauts.length === 0) {
+                                gameOver(`Game Over! All astronauts have been abducted!`);
+                            }
+                        }
+                    }
+                } else {
+                    // Normale Bewegung, wenn keine Entführung
+                    alien.position.x += alien.speed * alien.direction;
+
+                    // Richtung ändern bei Richtungswechsel oder zufällig
+                    if (Math.random() < 0.005) {
+                        alien.direction *= -1;
+                    }
+
+                    // Zufällige Höhenänderung
+                    if (Math.random() < 0.01) {
+                        alien.position.y += (Math.random() * 0.4) - 0.2;
+                        if (alien.position.y < 1) alien.position.y = 1;
+                        if (alien.position.y > 8) alien.position.y = 8;
+                    }
+                }
+            }
+        };
+
+        const checkCollisions = function () {
+            // Nur Kollisionen prüfen, wenn das Spiel läuft
+            if (gameState !== "playing") return;
+
+            // Kurze Unverwundbarkeit nach Spielstart
+            const gameJustStarted = player.invulnerable;
+            if (gameJustStarted) return;
+
+            // Schüsse gegen Aliens
+            for (let i = playerShots.length - 1; i >= 0; i--) {
+                const shot = playerShots[i];
+
+                for (let j = aliens.length - 1; j >= 0; j--) {
+                    const alien = aliens[j];
+
+                    // Kollisionscheck
+                    if (shot.intersectsMesh(alien, false)) {
+                        // Punkte erhöhen
+                        score += 100;
+
+                        // Falls Alien einen Astronauten entführt, diesen befreien
+                        if (alien.isAbducting && alien.target) {
+                            alien.target.isAbducted = false;
+                            alien.target.abductor = null;
+
+                            // Sanft zu Boden fallen
+                            const downAnim = new BABYLON.Animation(
+                                "downAnim",
+                                "position.y",
+                                30,
+                                BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                                BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                            );
+
+                            const keys = [];
+                            keys.push({ frame: 0, value: alien.target.position.y });
+                            keys.push({ frame: 60, value: -8.5 });
+                            downAnim.setKeys(keys);
+
+                            alien.target.animations = [downAnim];
+                            scene.beginAnimation(alien.target, 0, 60, false);
+                        }
+
+                        // Alien entfernen
+                        alien.dispose();
+                        aliens.splice(j, 1);
+
+                        // Schuss entfernen
+                        shot.dispose();
+                        playerShots.splice(i, 1);
+
+                        break;
+                    }
+                }
+            }
+
+            // Spieler gegen Aliens
+            for (let alien of aliens) {
+                if (player.intersectsMesh(alien, false)) {
+                    // Leben verlieren
+                    lives--;
+
+                    // Blinkeffekt für Spieler
+                    const blinkAnim = new BABYLON.Animation(
+                        "blinkAnim",
+                        "visibility",
+                        10,
+                        BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                        BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                    );
+
+                    const keys = [];
+                    keys.push({ frame: 0, value: 0 });
+                    keys.push({ frame: 5, value: 1 });
+                    keys.push({ frame: 10, value: 0 });
+                    keys.push({ frame: 15, value: 1 });
+                    blinkAnim.setKeys(keys);
+
+                    player.animations = [blinkAnim];
+                    const animControl = scene.beginAnimation(player, 0, 20, false);
+
+                    // Kurze Unverwundbarkeit nach Treffer
+                    player.invulnerable = true;
+                    setTimeout(() => {
+                        player.invulnerable = false;
+                    }, 2000);
+
+                    // Alien entfernen
+                    alien.dispose();
+                    aliens.splice(aliens.indexOf(alien), 1);
+
+                    // UI aktualisieren
+                    updateUI();
+
+                    // Game Over, wenn keine Leben mehr
+                    if (lives <= 0) {
+                        gameOver();
+                    }
+
+                    break;
+                }
+            }
+
+            // Spieler rettet Astronauten
+            for (let i = astronauts.length - 1; i >= 0; i--) {
+                const astronaut = astronauts[i];
+
+                let dist = BABYLON.Vector3.Distance(player.position, astronaut.position);
+                if (dist < 1) {
+                    // Punkte und Statistik
+                    score += 500;
+                    savedAstronauts++;
+
+                    // Astronaut entfernen
+                    astronaut.dispose();
+                    astronauts.splice(i, 1);
+
+                    // Leben bekommen bei 10 geretteten Astronauten
+                    if (savedAstronauts % 10 === 0) {
+                        lives++;
+                    }
+
+                    // UI aktualisieren
+                    updateUI();
+
+                    // Prüfen, ob alle Astronauten gerettet wurden
+                    checkGameWinCondition();
+                }
+            }
+        };
+
+        // Prüfen, ob alle Astronauten gerettet wurden
+        const checkGameWinCondition = function () {
+            // Wenn keine Astronauten mehr übrig sind, aber der Spieler noch lebt
+            if (astronauts.length === 0 && lives > 0 && savedAstronauts > 0) {
+                const message = `Congratulations! You saved ${savedAstronauts} out of ${totalAstronauts} astronauts!`;
+                gameOver(message);
+            }
+        };
+
+        // Spiel initialisieren
+        const initGame = function () {
+            createWorld();
+            initControls();
+
+            // Minimap Canvas initialisieren
+            const minimap = document.createElement("canvas");
+            minimap.id = "minimapCanvas";
+            document.getElementById("minimap").appendChild(minimap);
+
+            // Minimap initial aktualisieren
+            updateMinimap();
+
+            // Canvas fokussierbar machen und Stil anpassen
+            const canvas = document.getElementById("renderCanvas");
+            canvas.tabIndex = 1;
+            canvas.style.outline = "none"; // Entfernt den hässlichen Fokus-Rahmen
+
+            // Fokus initial auf Canvas setzen
+            setTimeout(function () {
+                canvas.focus();
+            }, 100);
+
+            // Event-Listener für Start- und Restart-Buttons
+            document.getElementById("startButton").addEventListener("click", startGame);
+            document.getElementById("restartButton").addEventListener("click", startGame);
+        };
+
+        // Rendering-Schleife
+        engine.runRenderLoop(function () {
+            updateGame();
+            scene.render();
+        });
+
+        // Fenstergröße anpassen
+        window.addEventListener("resize", function () {
+            engine.resize();
+
+            // Kamera-Seitenverhältnis aktualisieren
+            if (scene && scene.activeCamera) {
+                const camera = scene.activeCamera;
+                if (camera.mode === BABYLON.Camera.ORTHOGRAPHIC_CAMERA) {
+                    const orthoSize = 10; // Konstante Höhe beibehalten
+                    const aspectRatio = engine.getAspectRatio(camera);
+
+                    // Nur die Breite anpassen, Höhe konstant halten
+                    camera.orthoLeft = -orthoSize * aspectRatio;
+                    camera.orthoRight = orthoSize * aspectRatio;
+                }
+            }
+        });
+
+        // Spiel initialisieren
+        initGame();
+    </script>
+</body>
+
+</html>

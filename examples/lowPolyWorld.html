@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babylon.js Procedural Landscape</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #87CEEB;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>LOW POLY</h1>
+        <p>Stylized 3D environments with a focus on geometric simplicity.</p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+
+    <script>
+        // Simple Perlin-like Noise Implementation
+        const Noise = (function () {
+            const p = new Uint8Array(512);
+            const permutation = [151, 160, 137, 91, 90, 15,
+                131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23,
+                190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33,
+                88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166,
+                77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244,
+                102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196,
+                135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123,
+                5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42,
+                223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9,
+                129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228,
+                251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107,
+                49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254,
+                138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180
+            ];
+            for (let i = 0; i < 256; i++) p[256 + i] = p[i] = permutation[i];
+
+            function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            function lerp(t, a, b) { return a + t * (b - a); }
+            function grad(hash, x, y, z) {
+                const h = hash & 15;
+                const u = h < 8 ? x : y;
+                const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+                return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+            }
+
+            return {
+                perlin: function (x, y, z) {
+                    const X = Math.floor(x) & 255;
+                    const Y = Math.floor(y) & 255;
+                    const Z = Math.floor(z) & 255;
+                    x -= Math.floor(x);
+                    y -= Math.floor(y);
+                    z -= Math.floor(z);
+                    const u = fade(x);
+                    const v = fade(y);
+                    const w = fade(z);
+                    const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+                    const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+
+                    return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z),
+                        grad(p[BA], x - 1, y, z)),
+                        lerp(u, grad(p[AB], x, y - 1, z),
+                            grad(p[BB], x - 1, y - 1, z))),
+                        lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1),
+                            grad(p[BA + 1], x - 1, y, z - 1)),
+                            lerp(u, grad(p[AB + 1], x, y - 1, z - 1),
+                                grad(p[BB + 1], x - 1, y - 1, z - 1))));
+                }
+            };
+        })();
+
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.5, 0.8, 1, 1);
+
+            // Camera
+            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 3, 50, BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+            camera.lowerRadiusLimit = 10;
+            camera.upperRadiusLimit = 100;
+
+            // Lights
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            const dirLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -2, -1), scene);
+            dirLight.position = new BABYLON.Vector3(20, 40, 20);
+            dirLight.intensity = 0.5;
+
+            // Landscape parameters
+            const size = 100;
+            const subdivisions = 60;
+            const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: size, height: size, subdivisions: subdivisions }, scene);
+
+            // Apply Noise
+            const positions = ground.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const z = positions[i + 2];
+                // Layered noise for better terrain
+                let height = Noise.perlin(x * 0.05, z * 0.05, 0) * 10;
+                height += Noise.perlin(x * 0.1, z * 0.1, 0) * 4;
+                height += Noise.perlin(x * 0.2, z * 0.2, 0) * 1;
+
+                positions[i + 1] = height;
+            }
+            ground.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+
+            // Low-poly effect
+            ground.convertToFlatShadedMesh();
+
+            // Vertex Coloring
+            const colors = [];
+            const finalPositions = ground.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+
+            for (let i = 0; i < finalPositions.length; i += 3) {
+                const y = finalPositions[i + 1];
+
+                let color;
+                if (y < 0.5) {
+                    color = new BABYLON.Color4(0.9, 0.8, 0.6, 1); // Sand
+                } else if (y < 5) {
+                    color = new BABYLON.Color4(0.3, 0.6, 0.2, 1); // Grass
+                } else if (y < 8) {
+                    color = new BABYLON.Color4(0.4, 0.4, 0.4, 1); // Rock
+                } else {
+                    color = new BABYLON.Color4(1, 1, 1, 1); // Snow
+                }
+
+                colors.push(color.r, color.g, color.b, color.a);
+            }
+            ground.setVerticesData(BABYLON.VertexBuffer.ColorKind, colors);
+
+            const mat = new BABYLON.StandardMaterial("groundMat", scene);
+            mat.backFaceCulling = false;
+            ground.material = mat;
+
+            // Water
+            const water = BABYLON.MeshBuilder.CreatePlane("water", { size: size }, scene);
+            water.rotation.x = Math.PI / 2;
+            water.position.y = 0.2;
+            const waterMat = new BABYLON.StandardMaterial("waterMat", scene);
+            waterMat.diffuseColor = new BABYLON.Color3(0, 0.3, 0.8);
+            waterMat.alpha = 0.6;
+            water.material = waterMat;
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(function () {
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+
+</html>

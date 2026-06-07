@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Face Reconstruction – Neural Network</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #08080c;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, monospace;
+      color: #fff;
+      user-select: none;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #08080c;
+      transition: opacity .6s;
+    }
+
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 2px solid rgba(0, 200, 255, .08);
+      border-top-color: #00c8ff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #loading .msg {
+      margin-top: 16px;
+      color: rgba(255, 255, 255, .4);
+      font-size: 13px;
+    }
+
+    #loading .sub {
+      margin-top: 4px;
+      color: rgba(255, 255, 255, .15);
+      font-size: 11px;
+    }
+
+    #ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    #title {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: rgba(0, 200, 255, .3);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      font-weight: 300;
+    }
+
+    #webcam-wrap {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      width: 180px;
+      height: 135px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(0, 200, 255, .1);
+      box-shadow: 0 0 30px rgba(0, 200, 255, .03);
+      pointer-events: auto;
+    }
+
+    #webcam-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+
+    #webcam-label {
+      position: absolute;
+      bottom: 6px;
+      left: 8px;
+      font-size: 9px;
+      color: rgba(0, 200, 255, .4);
+      letter-spacing: 1px;
+      text-shadow: 0 0 8px rgba(0, 0, 0, .8);
+    }
+
+    #info {
+      position: absolute;
+      bottom: 30px;
+      right: 24px;
+      text-align: right;
+      pointer-events: none;
+    }
+
+    #info .stat {
+      font-size: 11px;
+      color: rgba(255, 255, 255, .2);
+    }
+
+    #info .stat span {
+      color: rgba(0, 200, 255, .5);
+    }
+
+    #controls {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      pointer-events: auto;
+      background: rgba(0, 0, 0, .45);
+      backdrop-filter: blur(10px);
+      padding: 8px 18px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 200, 255, .06);
+    }
+
+    #controls button {
+      background: rgba(0, 200, 255, .06);
+      border: 1px solid rgba(0, 200, 255, .15);
+      color: #00c8ff;
+      padding: 5px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      transition: all .2s;
+    }
+
+    #controls button:hover {
+      background: rgba(0, 200, 255, .14);
+      border-color: #00c8ff;
+    }
+
+    #controls label {
+      font-size: 10px;
+      color: rgba(255, 255, 255, .3);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+
+    #controls input[type="range"] {
+      width: 60px;
+      accent-color: #00c8ff;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #controls input[type="checkbox"] {
+      accent-color: #00c8ff;
+    }
+
+    .sep {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, .05);
+    }
+
+    #status-text {
+      font-size: 10px;
+      color: rgba(0, 200, 255, .35);
+      min-width: 60px;
+    }
+
+    #corner-tl,
+    #corner-br {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-color: rgba(0, 200, 255, .06);
+      border-style: solid;
+      border-width: 0;
+    }
+
+    #corner-tl {
+      top: 40px;
+      left: 40px;
+      border-top-width: 1px;
+      border-left-width: 1px;
+    }
+
+    #corner-br {
+      bottom: 80px;
+      right: 40px;
+      border-bottom-width: 1px;
+      border-right-width: 1px;
+    }
+
+    #error {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(8, 8, 12, .95);
+      padding: 30px;
+    }
+
+    #error.show {
+      display: flex;
+    }
+
+    #error h2 {
+      color: #ff4466;
+      font-size: 16px;
+      font-weight: 400;
+      letter-spacing: 1px;
+    }
+
+    #error p {
+      color: rgba(255, 255, 255, .3);
+      font-size: 12px;
+      margin-top: 8px;
+      text-align: center;
+      max-width: 400px;
+      line-height: 1.5;
+    }
+
+    #error button {
+      margin-top: 16px;
+      background: rgba(255, 68, 102, .1);
+      border: 1px solid rgba(255, 68, 102, .2);
+      color: #ff4466;
+      padding: 8px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+
+    #error button:hover {
+      background: rgba(255, 68, 102, .2);
+    }
+
+    .ui {
+      position: absolute;
+      top: 20%;
+      left: 10%;
+      color: white;
+      pointer-events: none;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+      max-width: 400px;
+      z-index: 100;
+    }
+
+    .ui h1 {
+      font-size: 3.5rem;
+      margin: 0;
+      margin-bottom: 0.5rem;
+      letter-spacing: 2px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .ui p {
+      font-size: 1.2rem;
+      opacity: 0.8;
+      line-height: 1.4;
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>NET VIDEO</h1>
+        <p>Real-time mesh manipulation and video stream integration.</p>
+    </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="msg">Neural Network wird geladen...</div>
+    <div class="sub">MediaPipe Face Mesh · 468 Landmarks</div>
+  </div>
+
+  <div id="error">
+    <h2>Keine Kamera gefunden</h2>
+    <p>Diese App benötigt eine Webcam. <br>Stelle sicher, dass du Zugriff erlaubst und eine Kamera angeschlossen ist.
+    </p>
+    <button onclick="location.reload()">Neu versuchen</button>
+  </div>
+
+  <div id="ui">
+    <div id="title">Neural 3D Face Reconstruction</div>
+    <div id="corner-tl"></div>
+    <div id="corner-br"></div>
+
+    <div id="webcam-wrap">
+      <video id="webcam" playsinline></video>
+      <div id="webcam-label">CAMERA INPUT</div>
+    </div>
+
+    <div id="info">
+      <div class="stat">Landmarks <span id="lmCount">0</span></div>
+      <div class="stat">FPS <span id="fpsCount">0</span></div>
+      <div class="stat">Vertices <span>468</span></div>
+      <div class="stat">Triangles <span id="triCount">0</span></div>
+    </div>
+
+    <div id="controls">
+      <span id="status-text">READY</span>
+      <div class="sep"></div>
+      <label><input type="checkbox" id="showMesh" checked> Mesh</label>
+      <label><input type="checkbox" id="showWire" checked> Wire</label>
+      <label><input type="checkbox" id="showPoints" checked> Points</label>
+      <div class="sep"></div>
+      <label><input type="checkbox" id="flipX"> X-Achse spiegeln</label>
+      <label><input type="checkbox" id="flipZ"> Z-Achse spiegeln</label>
+      <label><input type="checkbox" id="useTexture"> Textur (Video)</label>
+      <div class="sep"></div>
+      <label>Size <input type="range" id="meshScale" min="50" max="150" value="100"></label>
+      <div class="sep"></div>
+      <button id="resetView">Reset</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+  <script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const FaceMesh = window.FaceMesh;
+    const Camera = window.Camera;
+    const FACEMESH_TESSELATION = window.FACEMESH_TESSELATION || [];
+    const FACEMESH_CONTOURS = window.FACEMESH_CONTOURS || [];
+
+    // --- DOM refs ---
+    const loading = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const lmCount = document.getElementById('lmCount');
+    const fpsCount = document.getElementById('fpsCount');
+    const statusText = document.getElementById('status-text');
+    const video = document.getElementById('webcam');
+
+    // --- Renderer ---
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x08080c, 1);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+    // --- Scene ---
+    const scene = new THREE.Scene();
+
+    // --- Camera ---
+    const cam = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+    cam.position.set(0, 0.3, 3.2);
+    cam.lookAt(0, 0, 0);
+
+    // --- Controls ---
+    const controls = new OrbitControls(cam, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.autoRotate = false;
+    controls.minDistance = 1.5;
+    controls.maxDistance = 8;
+    controls.target.set(0, 0, 0);
+
+    // --- Lights ---
+    const ambient = new THREE.AmbientLight(0x222244, 0.6);
+    scene.add(ambient);
+
+    const mainLight = new THREE.DirectionalLight(0x00c8ff, 2.5);
+    mainLight.position.set(2, 3, 4);
+    scene.add(mainLight);
+
+    const fill = new THREE.DirectionalLight(0x4466ff, 0.8);
+    fill.position.set(-3, 1, -2);
+    scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0x8888ff, 0.4);
+    rim.position.set(0, -2, -3);
+    scene.add(rim);
+
+    const bgParticles = new THREE.BufferGeometry();
+    const bgCount = 400;
+    const bgPos = new Float32Array(bgCount * 3);
+    for (let i = 0; i < bgCount * 3; i++) bgPos[i] = (Math.random() - 0.5) * 15;
+    bgParticles.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+    const bgMat = new THREE.PointsMaterial({ color: 0x00c8ff, size: 0.015, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending });
+    const bgMesh = new THREE.Points(bgParticles, bgMat);
+    scene.add(bgMesh);
+
+    // --- Face Mesh ---
+    const FACE_VERTICES = 468;
+
+    function buildFaceGeometry() {
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(FACE_VERTICES * 3);
+
+      const tri = [];
+      for (let i = 0; i + 2 < FACEMESH_TESSELATION.length; i += 3) {
+        const a = FACEMESH_TESSELATION[i][0];
+        const b = FACEMESH_TESSELATION[i][1];
+        const c = FACEMESH_TESSELATION[i + 1][1];
+        if (a < FACE_VERTICES && b < FACE_VERTICES && c < FACE_VERTICES) {
+          tri.push(a, b, c);
+        }
+      }
+
+      if (tri.length > 0) {
+        geo.setIndex(tri);
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const uvs = new Float32Array(FACE_VERTICES * 2);
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      const colors = new Float32Array(FACE_VERTICES * 3);
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+
+      return { geo };
+    }
+
+    const { geo } = buildFaceGeometry();
+    const triCount = geo.index ? geo.index.count / 3 : 0;
+    document.getElementById('triCount').textContent = triCount;
+
+    const edgePairs = [];
+    for (let i = 0; i < FACEMESH_TESSELATION.length; i++) {
+      const a = FACEMESH_TESSELATION[i][0];
+      const b = FACEMESH_TESSELATION[i][1];
+      if (a < FACE_VERTICES && b < FACE_VERTICES) {
+        edgePairs.push(a, b);
+      }
+    }
+    const edgePositions = new Float32Array(edgePairs.length * 3);
+    const edgeGeom = new THREE.BufferGeometry();
+    edgeGeom.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3));
+
+    const faceMat = new THREE.MeshPhysicalMaterial({
+      color: 0x2255aa,
+      metalness: 0.05,
+      roughness: 0.25,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      clearcoat: 0.1,
+      vertexColors: true,
+    });
+    const faceMesh = new THREE.Mesh(geo, faceMat);
+    scene.add(faceMesh);
+
+    const videoTexture = new THREE.VideoTexture(video);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+
+    const texturedMat = new THREE.MeshPhysicalMaterial({
+      map: videoTexture,
+      side: THREE.DoubleSide,
+      roughness: 0.25,
+      metalness: 0.0,
+      clearcoat: 0.0,
+    });
+    let useTexture = false;
+
+    document.getElementById('useTexture').addEventListener('change', e => {
+      useTexture = e.target.checked;
+      faceMesh.material = useTexture ? texturedMat : faceMat;
+      faceMat.vertexColors = !useTexture;
+      faceMat.needsUpdate = true;
+    });
+
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0x00c8ff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.06,
+    });
+    const wireMesh = new THREE.Mesh(geo.clone(), wireMat);
+    scene.add(wireMesh);
+
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: 0x00c8ff,
+      transparent: true,
+      opacity: 0.04,
+    });
+    const edgeLines = new THREE.LineSegments(edgeGeom, edgeMat);
+    scene.add(edgeLines);
+
+    const pointMat = new THREE.PointsMaterial({
+      color: 0x00c8ff,
+      size: 0.015,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const pointCloud = new THREE.Points(geo.clone(), pointMat);
+    scene.add(pointCloud);
+
+    // Glow points
+    const glowMat = new THREE.PointsMaterial({
+      color: 0x00c8ff,
+      size: 0.025,
+      transparent: true,
+      opacity: 0.15,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glowPoints = new THREE.Points(geo.clone(), glowMat);
+    scene.add(glowPoints);
+
+    // Axis helper (small)
+    const axes = new THREE.AxesHelper(0.5);
+    axes.position.y = -1;
+    scene.add(axes);
+
+    const grid = new THREE.GridHelper(4, 16, 0x00c8ff, 0x002233);
+    grid.position.y = -0.95;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.08;
+    scene.add(grid);
+
+    // --- Face landmark update ---
+    function updateFace(landmarks, scale) {
+      const pos = faceMesh.geometry.attributes.position.array;
+      const col = faceMesh.geometry.attributes.color.array;
+      const uv = faceMesh.geometry.attributes.uv.array;
+
+      let minZ = Infinity, maxZ = -Infinity;
+      for (let i = 0; i < FACE_VERTICES; i++) {
+        const l = landmarks[i];
+        const x = ((l.x - 0.5) * 2.0) * (flipX ? -scale : scale);
+        const y = -(l.y - 0.5) * 2.0 * scale;
+        const z = l.z * 1.5 * scale * (flipZ ? -1 : 1);
+        pos[i * 3] = x;
+        pos[i * 3 + 1] = y;
+        pos[i * 3 + 2] = z;
+        uv[i * 2] = l.x;
+        uv[i * 2 + 1] = 1 - l.y;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+
+      const range = maxZ - minZ || 0.01;
+      for (let i = 0; i < FACE_VERTICES; i++) {
+        const z = pos[i * 3 + 2];
+        const t = (z - minZ) / range;
+        col[i * 3] = 0.1 + t * 0.6;
+        col[i * 3 + 1] = 0.3 + t * 0.5;
+        col[i * 3 + 2] = 0.6 + t * 0.4;
+      }
+
+      faceMesh.geometry.attributes.position.needsUpdate = true;
+      faceMesh.geometry.attributes.color.needsUpdate = true;
+      faceMesh.geometry.attributes.uv.needsUpdate = true;
+      faceMesh.geometry.computeVertexNormals();
+
+      wireMesh.geometry.attributes.position.array.set(pos);
+      wireMesh.geometry.attributes.position.needsUpdate = true;
+
+      pointCloud.geometry.attributes.position.array.set(pos);
+      pointCloud.geometry.attributes.position.needsUpdate = true;
+
+      glowPoints.geometry.attributes.position.array.set(pos);
+      glowPoints.geometry.attributes.position.needsUpdate = true;
+
+      const ePos = edgeLines.geometry.attributes.position.array;
+      for (let i = 0; i < edgePairs.length; i++) {
+        const vi = edgePairs[i];
+        ePos[i * 3] = pos[vi * 3];
+        ePos[i * 3 + 1] = pos[vi * 3 + 1];
+        ePos[i * 3 + 2] = pos[vi * 3 + 2];
+      }
+      edgeLines.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // --- Toggle visibility ---
+    document.getElementById('showMesh').addEventListener('change', e => { faceMesh.visible = e.target.checked; });
+    document.getElementById('showWire').addEventListener('change', e => { wireMesh.visible = e.target.checked; edgeLines.visible = e.target.checked; });
+    document.getElementById('showPoints').addEventListener('change', e => { pointCloud.visible = e.target.checked; glowPoints.visible = e.target.checked; });
+    document.getElementById('resetView').addEventListener('click', () => {
+      cam.position.set(0, 0.3, 3.2);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    });
+
+    let scaleFactor = 1.0;
+    document.getElementById('meshScale').addEventListener('input', e => {
+      scaleFactor = e.target.value / 100;
+    });
+
+    let flipX = false;
+    document.getElementById('flipX').addEventListener('change', e => {
+      flipX = e.target.checked;
+    });
+    let flipZ = false;
+    document.getElementById('flipZ').addEventListener('change', e => {
+      flipZ = e.target.checked;
+    });
+
+    // --- FPS ---
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+
+    // --- FaceMesh Neural Network ---
+    let faceReady = false;
+
+    const faceMeshNN = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMeshNN.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+
+    faceMeshNN.onResults((results) => {
+      if (!faceReady) {
+        faceReady = true;
+        loading.classList.add('hidden');
+        statusText.textContent = 'LIVE';
+      }
+
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        updateFace(landmarks, scaleFactor);
+        lmCount.textContent = landmarks.length;
+
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFpsTime >= 1000) {
+          fpsCount.textContent = frameCount;
+          frameCount = 0;
+          lastFpsTime = now;
+        }
+      }
+    });
+
+    // --- Camera ---
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' } });
+        video.srcObject = stream;
+        await video.play();
+
+        const camera = new Camera(video, {
+          onFrame: async () => {
+            try {
+              await faceMeshNN.send({ image: video });
+            } catch (e) { }
+          },
+          width: 320,
+          height: 240,
+        });
+        camera.start();
+      } catch (e) {
+        loading.classList.add('hidden');
+        errorEl.classList.add('show');
+        document.getElementById('error').querySelector('h2').textContent = 'Kamera nicht verfügbar';
+      }
+    }
+
+    startCamera();
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      cam.aspect = window.innerWidth / window.innerHeight;
+      cam.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Animate ---
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, cam);
+    }
+    animate();
+  </script>
+</body>
+
+</html>

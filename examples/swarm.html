@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babylon.js Queue-Based Boids (No For-Loops)</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>SWARM</h1>
+        <p>Emergent behavior and collective motion in 3D space.</p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const BOID_COUNT = 200;
+        const BATCH_SIZE = 50; // How many boids to update per frame
+        const BOUNDS = 20;
+
+        const createScene = () => {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.15, 1); // Dark background for contrast
+
+            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 40, BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            // Simple Boid Mesh Template
+            const boidMesh = BABYLON.MeshBuilder.CreateCylinder("boid", { diameterTop: 0, diameterBottom: 0.6, height: 1.2 }, scene);
+            boidMesh.rotation.x = Math.PI / 2;
+            boidMesh.bakeCurrentTransformIntoVertices();
+
+            const boidMaterial = new BABYLON.StandardMaterial("boidMat", scene);
+            boidMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.7, 1);
+            boidMaterial.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+            boidMesh.material = boidMaterial;
+            boidMesh.isVisible = true; // false;
+
+            // Thin Instances
+            const matrixData = new Float32Array(BOID_COUNT * 16);
+
+            // Initialization
+            const boids = Array.from({ length: BOID_COUNT }).map((_, i) => ({
+                id: i,
+                position: new BABYLON.Vector3(
+                    (Math.random() - 0.5) * BOUNDS,
+                    (Math.random() - 0.5) * BOUNDS,
+                    (Math.random() - 0.5) * BOUNDS
+                ),
+                velocity: new BABYLON.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    Math.random() - 0.5
+                ).normalize().scale(0.15),
+                state: "FLOCKING"
+            }));
+
+            // Initial matrices
+            boids.forEach((boid, i) => {
+                const matrix = BABYLON.Matrix.Translation(boid.position.x, boid.position.y, boid.position.z);
+                matrix.copyToArray(matrixData, i * 16);
+            });
+
+            // 4th parameter 'false' means it's NOT a static buffer (dynamic)
+            boidMesh.thinInstanceSetBuffer("matrix", matrixData, 16, false);
+
+            // Queue for processing
+            let queue = [...boids];
+
+            // Boid Rules (Steering calculation - Queue Based)
+            const updateSteering = (boid, allBoids) => {
+                let cohesion = BABYLON.Vector3.Zero();
+                let alignment = BABYLON.Vector3.Zero();
+                let separation = BABYLON.Vector3.Zero();
+                let neighborCount = 0;
+
+                const perceptionRadius = 6;
+                const separationDistance = 2.5;
+
+                allBoids.forEach(other => {
+                    if (boid.id === other.id) return;
+
+                    const distance = BABYLON.Vector3.Distance(boid.position, other.position);
+                    if (distance < perceptionRadius) {
+                        cohesion.addInPlace(other.position);
+                        alignment.addInPlace(other.velocity);
+
+                        if (distance < separationDistance) {
+                            const diff = boid.position.subtract(other.position);
+                            const dist = Math.max(distance, 0.1);
+                            diff.scaleInPlace(1 / dist);
+                            separation.addInPlace(diff);
+                        }
+                        neighborCount++;
+                    }
+                });
+
+                if (neighborCount > 0) {
+                    cohesion.scaleInPlace(1 / neighborCount).subtractInPlace(boid.position).scaleInPlace(0.01);
+                    alignment.scaleInPlace(1 / neighborCount).subtractInPlace(boid.velocity).scaleInPlace(0.05);
+                    separation.scaleInPlace(1 / neighborCount).scaleInPlace(0.1);
+
+                    // Apply steering forces to velocity
+                    boid.velocity.addInPlace(cohesion).addInPlace(alignment).addInPlace(separation);
+                }
+
+                // Speed Limit
+                const speed = boid.velocity.length();
+                const minSpeed = 0.1;
+                const maxSpeed = 0.25;
+                if (speed > maxSpeed) boid.velocity.scaleInPlace(maxSpeed / speed);
+                if (speed < minSpeed) boid.velocity.scaleInPlace(minSpeed / speed);
+            };
+
+            scene.onBeforeRenderObservable.add(() => {
+                const deltaTime = engine.getDeltaTime() / 16.66; // Normalized to ~60fps
+
+                // 1. Process a batch for HEAVY steering logic (Queue-based)
+                const processBatch = (count) => {
+                    if (count <= 0 || queue.length === 0) return;
+                    const boid = queue.shift();
+                    updateSteering(boid, boids);
+                    queue.push(boid);
+                    processBatch(count - 1);
+                };
+                processBatch(BATCH_SIZE);
+
+                // 2. Integration & Rendering for ALL boids (Every frame for smoothness)
+                boids.forEach((boid, i) => {
+                    // Constant integration (makes it smooth!)
+                    const moveStep = boid.velocity.scale(deltaTime);
+                    boid.position.addInPlace(moveStep);
+
+                    // Boundary Wrapping
+                    const wrap = (val, bound) => val > bound ? -bound : (val < -bound ? bound : val);
+                    boid.position.x = wrap(boid.position.x, BOUNDS);
+                    boid.position.y = wrap(boid.position.y, BOUNDS);
+                    boid.position.z = wrap(boid.position.z, BOUNDS);
+
+                    // Matrix update
+                    const normalizedVelocity = boid.velocity.normalizeToNew();
+                    const up = Math.abs(BABYLON.Vector3.Dot(normalizedVelocity, BABYLON.Vector3.Up())) > 0.99
+                        ? BABYLON.Vector3.Right()
+                        : BABYLON.Vector3.Up();
+
+                    const rotationMatrix = BABYLON.Matrix.LookAtLH(BABYLON.Vector3.Zero(), normalizedVelocity, up).invert();
+                    const rotation = BABYLON.Quaternion.FromRotationMatrix(rotationMatrix);
+
+                    const matrix = BABYLON.Matrix.Compose(
+                        BABYLON.Vector3.One(),
+                        rotation,
+                        boid.position
+                    );
+                    matrix.copyToArray(matrixData, i * 16);
+                });
+                boidMesh.thinInstanceBufferUpdated("matrix");
+            });
+
+            return scene;
+        };
+
+        const scene = createScene();
+        engine.runRenderLoop(() => {
+            scene.render();
+        });
+
+        window.addEventListener("resize", () => {
+            engine.resize();
+        });
+    </script>
+</body>
+
+</html>

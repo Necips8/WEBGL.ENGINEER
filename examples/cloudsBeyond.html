@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babylon.js Volumetric Clouds Preview</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+        }
+
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+        }
+
+        p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>BEYOND</h1>
+        <p>Exploring the next generation of volumetric web experiences with Babylon.js</p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const config = {
+            density: 0.6,
+            speed: 0.15,
+            windDir: 1.0,
+            detail: 2.0,
+            cloudColor: "#ffffff",
+            skyColor: "#0d1b2a",
+            brightness: 1.0,
+            resolutionScale: .5,
+            raySteps: 34
+        };
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
+
+            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 0, -5), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+
+            BABYLON.Effect.ShadersStore["cloudVertexShader"] = `
+                precision highp float;
+                attribute vec3 position;
+                attribute vec2 uv;
+                uniform mat4 worldViewProjection;
+                varying vec2 vUV;
+                void main(void) {
+                    gl_Position = worldViewProjection * vec4(position, 1.0);
+                    vUV = uv;
+                }
+            `;
+
+            BABYLON.Effect.ShadersStore["cloudFragmentShader"] = `
+                precision highp float;
+                varying vec2 vUV;
+                uniform float time;
+                uniform vec3 cameraPosition;
+                uniform float density;
+                uniform float speed;
+                uniform float windDir;
+                uniform float detail;
+                uniform float brightness;
+                uniform vec3 cloudColor;
+                uniform vec3 skyColor;
+                uniform float raySteps;
+
+                float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+                float noise(vec3 x) {
+                    vec3 p = floor(x);
+                    vec3 f = fract(x);
+                    f = f * f * (3.0 - 2.0 * f);
+                    float n = p.x + p.y * 57.0 + 113.0 * p.z;
+                    return mix(mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
+                                   mix(hash(n + 57.0), hash(n + 58.0), f.x), f.y),
+                               mix(mix(hash(n + 113.0), hash(n + 114.0), f.x),
+                                   mix(hash(n + 170.0), hash(n + 171.0), f.x), f.y), f.z);
+                }
+
+                float fbm(vec3 p) {
+                    float f = 0.5000 * noise(p); p = p * 2.02;
+                    f += 0.2500 * noise(p); p = p * 2.03;
+                    f += 0.1250 * noise(p); p = p * 2.01;
+                    f += 0.0625 * noise(p);
+                    return f;
+                }
+
+                float map(vec3 p) {
+                    vec3 q = p - vec3(0.1, 0.1, windDir) * time * speed;
+                    float f = fbm(q * detail * 0.2);
+                    float f2 = fbm((q + f * 0.5) * detail * 0.4);
+                    float d = (f + f2 * 0.5) - (1.2 - density);
+                    return clamp(d, 0.0, 1.0);
+                }
+
+                void main(void) {
+                    vec2 uv = vUV * 2.0 - 1.0;
+                    vec3 rd = normalize(vec3(uv, 1.2));
+                    vec3 ro = cameraPosition;
+                    
+                    vec4 sum = vec4(0.0);
+                    float t = 0.1;
+                    
+                    // Use a fixed loop count for compatibility, but scale step size
+                    float stepSize = 8.0 / raySteps; 
+                    
+                    for(int i=0; i<128; i++) {
+                        if(float(i) >= raySteps || sum.a > 0.95) break;
+                        vec3 p = ro + t * rd;
+                        float d = map(p);
+                        
+                        if(d > 0.001) {
+                            float lightSample = map(p + vec3(0.15, 0.15, 0.0));
+                            float shadow = clamp((d - lightSample) * 3.0, 0.0, 1.0);
+                            
+                            vec3 col = cloudColor + shadow * 0.4 * brightness;
+                            vec4 val = vec4(col, d);
+                            
+                            val.a *= 0.35;
+                            val.rgb *= val.a;
+                            sum += val * (1.0 - sum.a);
+                        }
+                        t += stepSize;
+                    }
+                    
+                    vec3 background = skyColor - rd.y * 0.25;
+                    gl_FragColor = vec4(mix(background, sum.xyz, sum.a), 1.0);
+                }
+            `;
+
+            const cloudMaterial = new BABYLON.ShaderMaterial("cloudMat", scene, {
+                vertex: "cloud",
+                fragment: "cloud",
+            }, {
+                attributes: ["position", "uv"],
+                uniforms: ["worldViewProjection", "time", "cameraPosition", "density", "speed", "windDir", "detail", "cloudColor", "skyColor", "brightness", "raySteps"]
+            });
+
+            const plane = BABYLON.MeshBuilder.CreatePlane("plane", { size: 20 }, scene);
+            plane.material = cloudMaterial;
+
+            const gui = new dat.GUI();
+            const perfFolder = gui.addFolder('Performance');
+            perfFolder.add(config, 'resolutionScale', 0.1, 1.0).name('Res Scale').onChange(v => {
+                engine.setHardwareScalingLevel(1.0 / v);
+            });
+            perfFolder.add(config, 'raySteps', 16, 128).step(1).name('Ray Steps');
+            perfFolder.open();
+
+            const cloudFolder = gui.addFolder('Clouds');
+            cloudFolder.add(config, 'density', 0, 1);
+            cloudFolder.add(config, 'speed', 0, 1.0);
+            cloudFolder.add(config, 'windDir', -2.0, 2.0).name('Wind Direction (Z)');
+            cloudFolder.add(config, 'detail', 1, 10);
+            cloudFolder.add(config, 'brightness', 0, 2);
+            cloudFolder.addColor(config, 'cloudColor');
+            cloudFolder.addColor(config, 'skyColor');
+            cloudFolder.open();
+
+            scene.onBeforeRenderObservable.add(() => {
+                cloudMaterial.setFloat("time", performance.now() * 0.001);
+                cloudMaterial.setVector3("cameraPosition", camera.position);
+                cloudMaterial.setFloat("density", config.density);
+                cloudMaterial.setFloat("speed", config.speed);
+                cloudMaterial.setFloat("windDir", config.windDir);
+                cloudMaterial.setFloat("detail", config.detail);
+                cloudMaterial.setFloat("brightness", config.brightness);
+                cloudMaterial.setFloat("raySteps", config.raySteps);
+
+                const cCol = BABYLON.Color3.FromHexString(config.cloudColor);
+                const sCol = BABYLON.Color3.FromHexString(config.skyColor);
+                cloudMaterial.setColor3("cloudColor", cCol);
+                cloudMaterial.setColor3("skyColor", sCol);
+            });
+
+            return scene;
+        };
+
+        const scene = createScene();
+        engine.runRenderLoop(() => scene.render());
+        window.addEventListener("resize", () => engine.resize());
+    </script>
+</body>
+
+</html>
