@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>God-Ray Post-Processing Shader</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+            min-width: 280px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+
+        .control-group input[type="color"] {
+            width: 100%;
+            height: 30px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .value-display {
+            display: inline-block;
+            float: right;
+            font-weight: bold;
+        }
+
+        h3 {
+            margin-top: 0;
+            border-bottom: 2px solid #4a90e2;
+            padding-bottom: 8px;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            z-index: 100;
+        }
+
+        .ui h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .ui p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            line-height: 1.4;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="renderCanvas"></canvas>
+
+    <div class="ui">
+        <h1>GOD RAYS</h1>
+        <p>Spherical world rendering with dense volumetric light.</p>
+    </div>
+
+    <div id="controls">
+        <h3>God-Ray Parameter</h3>
+
+        <div class="control-group">
+            <label>God-Ray Intensität <span class="value-display" id="godRayIntensityVal">1.2</span></label>
+            <input type="range" id="godRayIntensity" min="0" max="3" step="0.1" value="1.2">
+        </div>
+
+        <div class="control-group">
+            <label>God-Ray Samples <span class="value-display" id="godRaySamplesVal">80</span></label>
+            <input type="range" id="godRaySamples" min="30" max="120" step="10" value="80">
+        </div>
+
+        <div class="control-group">
+            <label>God-Ray Dichte <span class="value-display" id="godRayDensityVal">0.8</span></label>
+            <input type="range" id="godRayDensity" min="0.1" max="2" step="0.1" value="0.8">
+        </div>
+
+        <div class="control-group">
+            <label>Chromatische Aberration <span class="value-display" id="chromaticVal">0.003</span></label>
+            <input type="range" id="chromatic" min="0" max="0.01" step="0.001" value="0.003">
+        </div>
+
+        <div class="control-group">
+            <label>Lens Dust Stärke <span class="value-display" id="lensDustVal">0.3</span></label>
+            <input type="range" id="lensDust" min="0" max="1" step="0.1" value="0.3">
+        </div>
+
+        <div class="control-group">
+            <label>Bloom Intensität <span class="value-display" id="bloomVal">0.5</span></label>
+            <input type="range" id="bloom" min="0" max="2" step="0.1" value="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>Fog Near <span class="value-display" id="fogNearVal">10</span></label>
+            <input type="range" id="fogNear" min="0" max="30" step="1" value="10">
+        </div>
+
+        <div class="control-group">
+            <label>Fog Far <span class="value-display" id="fogFarVal">40</span></label>
+            <input type="range" id="fogFar" min="20" max="80" step="1" value="40">
+        </div>
+
+        <div class="control-group">
+            <label>Lichtfarbe</label>
+            <input type="color" id="lightColor" value="#ffe8a0">
+        </div>
+
+        <div class="control-group">
+            <label>Fog Farbe</label>
+            <input type="color" id="fogColor" value="#0a1628">
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('renderCanvas');
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = () => {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.04, 0.09, 0.16, 1);
+
+            // Kamera
+            const camera = new BABYLON.ArcRotateCamera('camera',
+                -Math.PI / 2, Math.PI / 2.8, 25,
+                new BABYLON.Vector3(0, 3, 0), scene);
+            camera.attachControl(canvas, true);
+            camera.lowerRadiusLimit = 10;
+            camera.upperRadiusLimit = 50;
+
+            // Hauptlichtquelle für God-Rays
+            const lightPos = new BABYLON.Vector3(-8, 12, -10);
+            const light = new BABYLON.PointLight('light', lightPos, scene);
+            light.intensity = 20;
+            light.diffuse = new BABYLON.Color3(1, 0.91, 0.63);
+
+            // Shadow Generator
+            const shadowGenerator = new BABYLON.ShadowGenerator(1024, light);
+            shadowGenerator.useBlurExponentialShadowMap = true;
+            shadowGenerator.blurScale = 2;
+            shadowGenerator.setDarkness(0.4);
+
+            // Grelle Lichtkugel
+            // const lightSphere = BABYLON.MeshBuilder.CreateSphere('lightSphere', 
+            //     {diameter: 2, segments: 16}, scene);
+            // lightSphere.position = lightPos.clone();
+            // const lightMat = new BABYLON.StandardMaterial('lightMat', scene);
+            // lightMat.emissiveColor = new BABYLON.Color3(3, 2.7, 1.9);
+            // lightMat.disableLighting = true;
+            // lightSphere.material = lightMat;
+
+            // Szenen-Objekte mit Standard-Material
+            const sphere = BABYLON.MeshBuilder.CreateSphere('sphere',
+                { diameter: 3, segments: 32 }, scene);
+            sphere.position = new BABYLON.Vector3(-6, 1.5, 3);
+            const sphereMat = new BABYLON.StandardMaterial('sphereMat', scene);
+            sphereMat.diffuseColor = new BABYLON.Color3(0.8, 0.3, 0.2);
+            sphereMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+            sphere.material = sphereMat;
+            sphere.receiveShadows = true;
+            shadowGenerator.addShadowCaster(sphere);
+
+            const box = BABYLON.MeshBuilder.CreateBox('box',
+                { size: 3 }, scene);
+            box.position = new BABYLON.Vector3(6, 1.5, 3);
+            const boxMat = new BABYLON.StandardMaterial('boxMat', scene);
+            boxMat.diffuseColor = new BABYLON.Color3(0.2, 0.5, 0.8);
+            boxMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+            box.material = boxMat;
+            box.receiveShadows = true;
+            shadowGenerator.addShadowCaster(box);
+
+            const torus = BABYLON.MeshBuilder.CreateTorus('torus',
+                { diameter: 4, thickness: 0.8, tessellation: 32 }, scene);
+            torus.position = new BABYLON.Vector3(0, 2, -3);
+            const torusMat = new BABYLON.StandardMaterial('torusMat', scene);
+            torusMat.diffuseColor = new BABYLON.Color3(0.3, 0.7, 0.3);
+            torusMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+            torus.material = torusMat;
+            torus.receiveShadows = true;
+            shadowGenerator.addShadowCaster(torus);
+
+            const cylinder = BABYLON.MeshBuilder.CreateCylinder('cylinder',
+                { height: 5, diameter: 1.5 }, scene);
+            cylinder.position = new BABYLON.Vector3(-3, 2.5, -5);
+            const cylinderMat = new BABYLON.StandardMaterial('cylinderMat', scene);
+            cylinderMat.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.2);
+            cylinder.material = cylinderMat;
+            cylinder.receiveShadows = true;
+            shadowGenerator.addShadowCaster(cylinder);
+
+            // const ground = BABYLON.MeshBuilder.CreateGround('ground', 
+            //     {width: 50, height: 50}, scene);
+            // const groundMat = new BABYLON.StandardMaterial('groundMat', scene);
+            // groundMat.diffuseColor = new BABYLON.Color3(0.3, 0.35, 0.4);
+            // groundMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            // ground.material = groundMat;
+            // ground.receiveShadows = true;
+
+            // Post-Process Shader für God-Rays
+            BABYLON.Effect.ShadersStore['godrayFragmentShader'] = `
+                precision highp float;
+                
+                varying vec2 vUV;
+                uniform sampler2D textureSampler;
+                uniform sampler2D depthSampler;
+                uniform vec2 screenLightPos;
+                uniform float godRayIntensity;
+                uniform int godRaySamples;
+                uniform float godRayDensity;
+                uniform float chromaticAberration;
+                uniform float lensDustStrength;
+                uniform float bloomIntensity;
+                uniform vec3 lightColor;
+                uniform float fogNear;
+                uniform float fogFar;
+                uniform vec3 fogColor;
+                uniform float cameraMinZ;
+                uniform float cameraMaxZ;
+                
+                float rand(vec2 co) {
+                    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+                }
+                
+                float getLinearDepth(vec2 coord) {
+                    float z = texture2D(depthSampler, coord).r;
+                    return cameraMinZ + (cameraMaxZ - cameraMinZ) * z;
+                }
+                
+                float getGodRays(vec2 uv, vec2 lightPos, float intensity, int samples) {
+                    float rays = 0.0;
+                    
+                    vec2 dir = uv - lightPos;
+                    float dist = length(dir);
+                    dir = normalize(dir);
+                    
+                    float stepSize = dist / float(samples);
+                    vec2 step = dir * stepSize;
+                    vec2 sampleUV = uv;
+                    
+                    float jitter = rand(uv) * 0.3;
+                    
+                    for (int i = 0; i < 120; i++) {
+                        if (i >= samples) break;
+                        
+                        sampleUV -= step * (1.0 + jitter);
+                        
+                        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || 
+                            sampleUV.y < 0.0 || sampleUV.y > 1.0) {
+                            break;
+                        }
+                        
+                        float sampleDepth = getLinearDepth(sampleUV);
+                        
+                        if (sampleDepth < cameraMaxZ * 0.99) {
+                            rays += 0.3;
+                        } else {
+                            rays += 1.0;
+                        }
+                    }
+                    
+                    rays /= float(samples);
+                    rays *= intensity * exp(-dist * godRayDensity);
+                    
+                    return rays;
+                }
+                
+                void main(void) {
+                    // Chromatic Aberration
+                    vec2 center = vec2(0.5, 0.5);
+                    vec2 distToCenter = vUV - center;
+                    
+                    float r = texture2D(textureSampler, vUV + distToCenter * chromaticAberration).r;
+                    vec4 originalColor = texture2D(textureSampler, vUV);
+                    float g = originalColor.g;
+                    float b = texture2D(textureSampler, vUV - distToCenter * chromaticAberration).b;
+                    
+                    vec3 color = vec3(r, g, b);
+                    
+                    // Fog
+                    float depth = getLinearDepth(vUV);
+                    float fogFactor = smoothstep(fogNear, fogFar, depth);
+                    vec3 finalColor = mix(color, fogColor, fogFactor);
+                    
+                    // God Rays
+                    float godRays = getGodRays(vUV, screenLightPos, godRayIntensity, godRaySamples);
+                    
+                    // Lens Dust
+                    float dustNoise = rand(vUV * 30.0);
+                    float dust = smoothstep(0.85, 1.0, dustNoise);
+                    vec3 dustEffect = lightColor * dust * godRays * lensDustStrength;
+                    
+                    // Bloom/Glow
+                    vec3 glow = lightColor * godRays * bloomIntensity;
+                    
+                    // God Ray Color
+                    finalColor += lightColor * godRays * 0.8;
+                    finalColor += dustEffect;
+                    finalColor += glow;
+                    
+                    gl_FragColor = vec4(finalColor, originalColor.a);
+                }
+            `;
+
+            // Post-Process erstellen
+            const postProcess = new BABYLON.PostProcess(
+                'godray',
+                'godray',
+                ['screenLightPos', 'godRayIntensity', 'godRaySamples', 'godRayDensity',
+                    'chromaticAberration', 'lensDustStrength', 'bloomIntensity',
+                    'lightColor', 'fogNear', 'fogFar', 'fogColor', 'cameraMinZ', 'cameraMaxZ'],
+                ['depthSampler'],
+                1.0,
+                camera
+            );
+
+            // Depth Renderer
+            const depthRenderer = scene.enableDepthRenderer(camera);
+
+            postProcess.onApply = (effect) => {
+                // Lichtposition in Screen Space konvertieren
+                const lightViewPos = BABYLON.Vector3.TransformCoordinates(
+                    lightPos,
+                    camera.getViewMatrix()
+                );
+                const lightProjPos = BABYLON.Vector3.TransformCoordinates(
+                    lightViewPos,
+                    camera.getProjectionMatrix()
+                );
+
+                const screenX = (lightProjPos.x + 1.0) * 0.5;
+                const screenY = (1.0 - lightProjPos.y) * 0.5;
+
+                effect.setVector2('screenLightPos', new BABYLON.Vector2(screenX, screenY));
+                effect.setFloat('godRayIntensity', 1.2);
+                effect.setInt('godRaySamples', 80);
+                effect.setFloat('godRayDensity', 0.8);
+                effect.setFloat('chromaticAberration', 0.003);
+                effect.setFloat('lensDustStrength', 0.3);
+                effect.setFloat('bloomIntensity', 0.5);
+                effect.setVector3('lightColor', new BABYLON.Vector3(1, 0.91, 0.63));
+                effect.setFloat('fogNear', 10);
+                effect.setFloat('fogFar', 40);
+                effect.setVector3('fogColor', new BABYLON.Vector3(0.04, 0.09, 0.16));
+                effect.setFloat('cameraMinZ', camera.minZ);
+                effect.setFloat('cameraMaxZ', camera.maxZ);
+                effect.setTexture('depthSampler', depthRenderer.getDepthMap());
+            };
+
+            // Animation
+            scene.registerBeforeRender(() => {
+                sphere.rotation.y += 0.008;
+                box.rotation.x += 0.004;
+                box.rotation.y += 0.009;
+                torus.rotation.x += 0.005;
+                torus.rotation.z += 0.003;
+                cylinder.rotation.y += 0.006;
+            });
+
+            // UI Controls
+            const setupControls = () => {
+                const updateValue = (id, value) => {
+                    document.getElementById(id + 'Val').textContent = value;
+                };
+
+                document.getElementById('godRayIntensity').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('godRayIntensity', val.toFixed(1));
+                });
+
+                document.getElementById('godRaySamples').addEventListener('input', (e) => {
+                    const val = parseInt(e.target.value);
+                    updateValue('godRaySamples', val);
+                });
+
+                document.getElementById('godRayDensity').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('godRayDensity', val.toFixed(1));
+                });
+
+                document.getElementById('chromatic').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('chromatic', val.toFixed(3));
+                });
+
+                document.getElementById('lensDust').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('lensDust', val.toFixed(1));
+                });
+
+                document.getElementById('bloom').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('bloom', val.toFixed(1));
+                });
+
+                document.getElementById('fogNear').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('fogNear', val);
+                });
+
+                document.getElementById('fogFar').addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    updateValue('fogFar', val);
+                });
+
+                document.getElementById('lightColor').addEventListener('input', (e) => {
+                    const color = BABYLON.Color3.FromHexString(e.target.value);
+                    light.diffuse = color;
+                    lightMat.emissiveColor = color.scale(3);
+                });
+
+                document.getElementById('fogColor').addEventListener('input', (e) => {
+                    const color = BABYLON.Color3.FromHexString(e.target.value);
+                    scene.clearColor = new BABYLON.Color4(color.r, color.g, color.b, 1);
+                });
+
+                // Update-Funktion für Post-Process
+                scene.onBeforeRenderObservable.add(() => {
+                    postProcess.onApply = (effect) => {
+                        const lightViewPos = BABYLON.Vector3.TransformCoordinates(
+                            lightPos,
+                            camera.getViewMatrix()
+                        );
+                        const lightProjPos = BABYLON.Vector3.TransformCoordinates(
+                            lightViewPos,
+                            camera.getProjectionMatrix()
+                        );
+
+                        const screenX = (lightProjPos.x + 1.0) * 0.5;
+                        const screenY = (1.0 - lightProjPos.y) * 0.5;
+
+                        effect.setVector2('screenLightPos', new BABYLON.Vector2(screenX, screenY));
+                        effect.setFloat('godRayIntensity', parseFloat(document.getElementById('godRayIntensity').value));
+                        effect.setInt('godRaySamples', parseInt(document.getElementById('godRaySamples').value));
+                        effect.setFloat('godRayDensity', parseFloat(document.getElementById('godRayDensity').value));
+                        effect.setFloat('chromaticAberration', parseFloat(document.getElementById('chromatic').value));
+                        effect.setFloat('lensDustStrength', parseFloat(document.getElementById('lensDust').value));
+                        effect.setFloat('bloomIntensity', parseFloat(document.getElementById('bloom').value));
+
+                        const lightColorHex = document.getElementById('lightColor').value;
+                        const lightCol = BABYLON.Color3.FromHexString(lightColorHex);
+                        effect.setVector3('lightColor', new BABYLON.Vector3(lightCol.r, lightCol.g, lightCol.b));
+
+                        effect.setFloat('fogNear', parseFloat(document.getElementById('fogNear').value));
+                        effect.setFloat('fogFar', parseFloat(document.getElementById('fogFar').value));
+
+                        const fogColorHex = document.getElementById('fogColor').value;
+                        const fogCol = BABYLON.Color3.FromHexString(fogColorHex);
+                        effect.setVector3('fogColor', new BABYLON.Vector3(fogCol.r, fogCol.g, fogCol.b));
+
+                        effect.setFloat('cameraMinZ', camera.minZ);
+                        effect.setFloat('cameraMaxZ', camera.maxZ);
+                        effect.setTexture('depthSampler', depthRenderer.getDepthMap());
+                    };
+                });
+            };
+
+            setupControls();
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(() => {
+            scene.render();
+        });
+
+        window.addEventListener('resize', () => {
+            engine.resize();
+        });
+    </script>
+</body>
+
+</html>
