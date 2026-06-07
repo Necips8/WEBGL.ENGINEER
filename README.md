@@ -34,7 +34,7 @@ Die Website ist als interaktive 3D-Reise konzipiert, die es Besuchern ermöglich
 
 ## Über mich
 
-Mit über 30 Jahren Erfahrung in der Softwareindustrie spezialisierte ich mich auf komplexe E-Commerce-Architekturen und innovatives technisches Design. Er ist staatlich geprüfter Informatiker (ADV Böblingen) und ein Pionier im Einsatz von KI-Tools zur Optimierung moderner Entwicklungsabläufe.
+Mit über 30 Jahren Erfahrung in der Softwareindustrie spezialisierte ich mich auf komplexe E-Commerce-Architekturen und innovatives technisches Design. Ich bin staatlich geprüfter Informatiker (ADV Böblingen) und ein Pionier im Einsatz von KI-Tools zur Optimierung moderner Entwicklungsabläufe.
 
 ---
 © 2026 necips@live.de - [GitHub Profil](https://github.com/Necips8)

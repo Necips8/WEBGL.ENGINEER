@@ -571,19 +571,32 @@
 
             const floatingGroup = new BABYLON.TransformNode("floatingGroup");
             for (let i = 0; i < 50; i++) {
-                const box = BABYLON.MeshBuilder.CreateBox("box" + i, {size: Math.random() * 2 + 0.5}, scene);
-                box.position = new BABYLON.Vector3(
+                const isBox = Math.random() > 0.5;
+                const mesh = isBox 
+                    ? BABYLON.MeshBuilder.CreateBox("box" + i, {size: Math.random() * 2 + 0.5}, scene)
+                    : BABYLON.MeshBuilder.CreateSphere("sphere" + i, {diameter: Math.random() * 2 + 0.5}, scene);
+                
+                mesh.position = new BABYLON.Vector3(
                     (Math.random() - 0.5) * 60,
                     (Math.random() - 0.5) * 400 - 100,
                     (Math.random() - 0.5) * 40
                 );
-                box.parent = floatingGroup;
-                box.material = new BABYLON.StandardMaterial("boxMat" + i, scene);
-                box.material.diffuseColor = new BABYLON.Color3(0, 0.8, 1);
-                box.material.emissiveColor = new BABYLON.Color3(0, 0.1, 0.2);
+                mesh.parent = floatingGroup;
+                mesh.material = new BABYLON.StandardMaterial("meshMat" + i, scene);
+                mesh.material.diffuseColor = new BABYLON.Color3(0, 0.8, 1);
+                mesh.material.emissiveColor = new BABYLON.Color3(0, 0.1, 0.2);
             }
 
             const maxScroll = (sections.length - 1) * sectionHeight;
+            let mouseX = 0;
+            let targetParallaxX = 0;
+            let currentParallaxX = 0;
+
+            window.addEventListener("mousemove", (e) => {
+                // Normalize mouse position from -1 to 1
+                mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+                targetParallaxX = -mouseX * 5; // Adjust the 5 to change intensity
+            });
 
             window.addEventListener("wheel", (e) => {
                 targetCameraY -= e.deltaY * 0.1;
@@ -593,6 +606,11 @@
 
             scene.registerBeforeRender(() => {
                 camera.position.y = BABYLON.Scalar.Lerp(camera.position.y, targetCameraY, 0.05);
+                
+                // Apply parallax
+                currentParallaxX = BABYLON.Scalar.Lerp(currentParallaxX, targetParallaxX, 0.05);
+                floatingGroup.position.x = currentParallaxX;
+
                 const currentSectionIndex = Math.round(Math.abs(camera.position.y) / sectionHeight);
                 sections.forEach((s, idx) => {
                     if (idx === currentSectionIndex) {
