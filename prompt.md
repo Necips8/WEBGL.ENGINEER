@@ -1,1 +1,7 @@
-schaue dir mein profil.md an und erstelle eine landingpage (index.html) dass meine fertigkeiten als GraphikDesigner präsentiert. Meine Beispiele befinden sich im verzeichnis examples. mein profil könnte man mit parallaxWebSite.html darstellen und mit links auf die verschiedenen examples versehen. Nur als idee. bitte erstelle zunächst ein plan.md wie du die präsentation gestalten würdest.
+Schaue dir meine Datei `profil.md` an und erstelle darauf basierend eine Landingpage (`index.html`), die meine Fähigkeiten als Grafikdesigner präsentiert.
+
+Meine Arbeitsbeispiele befinden sich im Verzeichnis `examples` und sollen entsprechend eingebunden werden.
+
+Mein Profil könnte beispielsweise im Stil einer Parallax-Website (ähnlich `parallaxWebSite.html`) dargestellt werden, mit Verlinkungen zu den einzelnen Beispielen.
+
+Dies ist zunächst nur eine grobe Idee. Bitte erstelle im ersten Schritt eine `plan.md`, in der du beschreibst, wie du die Präsentation gestalten würdest.
